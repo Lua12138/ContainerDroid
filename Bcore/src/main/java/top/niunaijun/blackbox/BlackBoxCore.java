@@ -14,8 +14,6 @@ import android.os.Environment;
 import android.os.IBinder;
 import android.os.Process;
 
-import androidx.annotation.RequiresApi;
-
 import black.android.app.BRActivityThread;
 import top.canyie.pine.PineConfig;
 import top.niunaijun.blackbox.app.LauncherActivity;
@@ -62,7 +60,7 @@ import top.niunaijun.blackbox.core.system.ServiceManager;
  * しーＪ
  * 此处无Bug
  */
-@SuppressLint({"StaticFieldLeak", "NewApi"})
+@SuppressLint("StaticFieldLeak")
 public class BlackBoxCore extends ClientConfiguration {
     public static final String TAG = "BlackBoxCore";
 
@@ -122,14 +120,12 @@ public class BlackBoxCore extends ClientConfiguration {
 //            android.os.Debug.waitForDebugger();
         }
         if (isServerProcess()) {
-            if (clientConfiguration.isEnableDaemonService()) {
-                Intent intent = new Intent();
-                intent.setClass(getContext(), DaemonService.class);
-                if (BuildCompat.isOreo()) {
-                    getContext().startForegroundService(intent);
-                } else {
-                    getContext().startService(intent);
-                }
+            Intent intent = new Intent();
+            intent.setClass(getContext(), DaemonService.class);
+            if (BuildCompat.isOreo()) {
+                getContext().startForegroundService(intent);
+            } else {
+                getContext().startService(intent);
             }
         }
         PineConfig.debug = true;
