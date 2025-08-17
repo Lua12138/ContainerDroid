@@ -53,5 +53,4 @@ interface IBActivityManagerService {
     void finishBroadcast(in PendingResultData data);
 
     String getCallingPackage(in IBinder token, int userId);
-    ComponentName getCallingActivity(in IBinder token, int userId);
 }

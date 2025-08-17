@@ -10,7 +10,6 @@ import java.util.List;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
 import top.niunaijun.blackbox.core.env.BEnvironment;
-import top.niunaijun.blackbox.core.system.accounts.BAccountManagerService;
 import top.niunaijun.blackbox.core.system.am.BActivityManagerService;
 import top.niunaijun.blackbox.core.system.am.BJobManagerService;
 import top.niunaijun.blackbox.core.system.os.BStorageManagerService;
@@ -58,7 +57,6 @@ public class BlackBoxSystem {
         BPackageInstallerService.get().systemReady();
         BXposedManagerService.get().systemReady();
         BProcessManagerService.get().systemReady();
-        BAccountManagerService.get().systemReady();
 
         List<String> preInstallPackages = AppSystemEnv.getPreInstallPackages();
         for (String preInstallPackage : preInstallPackages) {

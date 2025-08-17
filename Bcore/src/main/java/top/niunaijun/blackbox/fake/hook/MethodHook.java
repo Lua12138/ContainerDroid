@@ -2,8 +2,6 @@ package top.niunaijun.blackbox.fake.hook;
 
 import java.lang.reflect.Method;
 
-import top.niunaijun.blackbox.BlackBoxCore;
-
 /**
  * Created by Milk on 3/30/21.
  * * ∧＿∧
@@ -26,8 +24,4 @@ public abstract class MethodHook {
     }
 
     protected abstract Object hook(Object who, Method method, Object[] args) throws Throwable;
-
-    protected boolean isEnable() {
-        return BlackBoxCore.get().isBlackProcess();
-    }
 }

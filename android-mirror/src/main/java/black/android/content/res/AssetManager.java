@@ -10,7 +10,7 @@ import top.niunaijun.blackreflection.annotation.BMethod;
 @BClassName("android.content.res.AssetManager")
 public interface AssetManager {
     @BConstructor
-    android.content.res.AssetManager _new();
+    AssetManager _new();
 
     @BMethod
     Integer addAssetPath(String String0);
