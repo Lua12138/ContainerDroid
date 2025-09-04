@@ -1,7 +1,6 @@
 package top.niunaijun.blackbox.core.system.pm;
 
 import android.annotation.SuppressLint;
-import android.app.PendingIntent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.ConfigurationInfo;
@@ -15,6 +14,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.Signature;
 import android.os.Build;
+import android.os.Process;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -186,14 +186,33 @@ public class PackageManagerCompat {
                 }
             }
         }
-        if ((flags & PackageManager.GET_SIGNATURES) != 0) {
-            pi.signatures = new Signature[]{p.mSignatures[0]};
-        }
-        if (BuildCompat.isPie()) {
+        if (GmsCore.isGoogleAppOrService(p.packageName)) {
+            PackageInfo base = null;
+            try {
+                base = BlackBoxCore.getContext().getPackageManager().getPackageInfo(p.packageName, flags);
+            } catch (PackageManager.NameNotFoundException e) {
+                e.printStackTrace();
+            }
+            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+                if (base != null) {
+                    pi.signatures = base.signatures;
+                }
+            }
             if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
-                PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
-                BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
-                pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
+                if (base != null) {
+                    pi.signingInfo = base.signingInfo;
+                }
+            }
+        } else {
+            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+                pi.signatures = new Signature[]{p.mSignatures[0]};
+            }
+            if (BuildCompat.isPie()) {
+                if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
+                    PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
+                    BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
+                    pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
+                }
             }
         }
         return pi;
@@ -288,8 +307,8 @@ public class PackageManagerCompat {
         ai.processName = BPackageManagerService.fixProcessName(p.packageName, ai.packageName);
         ai.publicSourceDir = sourceDir;
         ai.sourceDir = sourceDir;
-//        ai.uid = p.mExtras.appId;
-        ai.uid = baseApplication.uid;
+        ai.uid = p.mExtras.appId;
+//        ai.uid = baseApplication.uid;
 
         if (BuildCompat.isL()) {
             BRApplicationInfoL.get(ai)._set_primaryCpuAbi(Build.CPU_ABI);
