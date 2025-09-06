@@ -28,7 +28,6 @@ import top.niunaijun.blackbox.fake.service.ILauncherAppsProxy;
 import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
 import top.niunaijun.blackbox.fake.service.IMediaRouterServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMediaSessionManagerProxy;
-import top.niunaijun.blackbox.fake.service.INetworkManagementServiceProxy;
 import top.niunaijun.blackbox.fake.service.INotificationManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPackageManagerProxy;
 import top.niunaijun.blackbox.fake.service.IPermissionManagerProxy;
@@ -128,7 +127,6 @@ public class HookManager {
             }
             // 7.0
             if (BuildCompat.isN()) {
-                addInjector(new INetworkManagementServiceProxy());
             }
             // 6.0
             if (BuildCompat.isM()) {

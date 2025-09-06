@@ -6,7 +6,6 @@ import android.content.pm.ApplicationInfo;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.Process;
 import android.os.RemoteException;
 import android.util.Log;
 
@@ -52,20 +51,20 @@ public class BProcessManagerService implements ISystemService {
         return sBProcessManagerService;
     }
 
-    public ProcessRecord startProcessLocked(String packageName, String processName, int userId, int bpid, int callingPid) {
+    public ProcessRecord startProcessLocked(String packageName, String processName, int userId, int bpid, int callingUid, int callingPid) {
         ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
         if (info == null)
             return null;
         ProcessRecord app;
         int buid = BUserHandle.getUid(userId, BPackageManagerService.get().getAppId(packageName));
         synchronized (mProcessLock) {
-            Map<String, ProcessRecord> bProcess = mProcessMap.get(buid);
+            Map<String, ProcessRecord> vProcess = mProcessMap.get(buid);
 
-            if (bProcess == null) {
-                bProcess = new HashMap<>();
+            if (vProcess == null) {
+                vProcess = new HashMap<>();
             }
             if (bpid == -1) {
-                app = bProcess.get(processName);
+                app = vProcess.get(processName);
                 if (app != null) {
                     if (app.initLock != null) {
                         app.initLock.block();
@@ -80,21 +79,19 @@ public class BProcessManagerService implements ISystemService {
             if (bpid == -1) {
                 throw new RuntimeException("No processes available");
             }
-            app = new ProcessRecord(info, processName);
-            app.uid = Process.myUid();
-            app.pid = callingPid;
-            app.bpid = bpid;
+            app = new ProcessRecord(info, processName, 0, bpid, callingUid);
+            app.uid = buid;
             app.buid = buid;
-            app.callingBUid = getBUidByPidOrPackageName(callingPid, packageName);
             app.userId = userId;
+            app.baseBUid = BUserHandle.getAppId(info.uid);
 
-            bProcess.put(processName, app);
+            vProcess.put(processName, app);
             mPidsSelfLocked.add(app);
 
-            mProcessMap.put(buid, bProcess);
+            mProcessMap.put(app.buid, vProcess);
             if (!initAppProcessL(app)) {
                 //init process fail
-                bProcess.remove(processName);
+                vProcess.remove(processName);
                 mPidsSelfLocked.remove(app);
                 app = null;
             } else {
@@ -132,7 +129,7 @@ public class BProcessManagerService implements ISystemService {
             if (app == null) {
                 String stubProcessName = getProcessName(BlackBoxCore.getContext(), callingPid);
                 int bpid = parseBPid(stubProcessName);
-                startProcessLocked(packageName, processName, userId, bpid, callingPid);
+                startProcessLocked(packageName, processName, userId, bpid, callingUid, callingPid);
             }
         }
     }
@@ -264,16 +261,6 @@ public class BProcessManagerService implements ISystemService {
             if (process == null)
                 return new ArrayList<>();
             return new ArrayList<>(process.values());
-        }
-    }
-
-    public int getBUidByPidOrPackageName(int pid, String packageName) {
-        synchronized (mProcessLock) {
-            ProcessRecord callingProcess = BProcessManagerService.get().findProcessByPid(pid);
-            if (callingProcess == null) {
-                return BPackageManagerService.get().getAppId(packageName);
-            }
-            return callingProcess.buid;
         }
     }
 
