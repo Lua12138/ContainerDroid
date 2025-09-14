@@ -45,5 +45,4 @@ interface IBPackageManagerService {
 
     boolean isInstalled(String packageName, int userId);
     List<InstalledPackage> getInstalledPackagesAsUser(int userId);
-    String[] getPackagesForUid(int uid, int userId);
 }
