@@ -12,7 +12,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.ferfalk.simplesearchview.SimpleSearchView
 import top.niunaijun.blackboxa.R
-import top.niunaijun.blackboxa.bean.InstalledAppBean
+import top.niunaijun.blackboxa.bean.AppInfo
 import top.niunaijun.blackboxa.databinding.ActivityListBinding
 import top.niunaijun.blackboxa.util.InjectionUtil
 import top.niunaijun.blackboxa.util.inflate
@@ -27,7 +27,7 @@ class ListActivity : BaseActivity() {
 
     private lateinit var viewModel: ListViewModel
 
-    private var appList: List<InstalledAppBean> = ArrayList()
+    private var appList: List<AppInfo> = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,17 +68,16 @@ class ListActivity : BaseActivity() {
     private fun initViewModel() {
         viewModel = ViewModelProvider(this, InjectionUtil.getListFactory()).get(ListViewModel::class.java)
         val onlyShowXp = intent.getBooleanExtra("onlyShowXp", false)
-        val userID = intent.getIntExtra("userID",0)
 
         if (onlyShowXp) {
             viewModel.getInstalledModules()
             viewBinding.toolbarLayout.toolbar.setTitle(R.string.installed_module)
         } else {
-            viewModel.getInstallAppList(userID)
+            viewModel.getInstallAppList()
             viewBinding.toolbarLayout.toolbar.setTitle(R.string.installed_app)
         }
 
-        viewModel.loadingLiveData.observe(this) {
+        viewModel.previewingLiveData.observe(this) {
             if (it) {
                 viewBinding.stateView.showLoading()
             } else {
@@ -151,8 +150,8 @@ class ListActivity : BaseActivity() {
 
     override fun onStop() {
         super.onStop()
-        viewModel.loadingLiveData.postValue(true)
-        viewModel.loadingLiveData.removeObservers(this)
+        viewModel.previewingLiveData.postValue(true)
+        viewModel.previewingLiveData.removeObservers(this)
         viewModel.appsLiveData.postValue(null)
         viewModel.appsLiveData.removeObservers(this)
     }
