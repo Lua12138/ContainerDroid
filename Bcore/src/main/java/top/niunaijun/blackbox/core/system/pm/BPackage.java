@@ -14,6 +14,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.Signature;
 import android.os.Bundle;
+import android.os.Debug;
 import android.os.Parcel;
 import android.os.Parcelable;
 

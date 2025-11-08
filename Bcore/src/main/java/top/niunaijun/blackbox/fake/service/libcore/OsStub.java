@@ -1,7 +1,9 @@
 package top.niunaijun.blackbox.fake.service.libcore;
 
 import android.os.Process;
+import android.util.Log;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 import black.libcore.io.BRLibcore;

@@ -6,6 +6,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.view.animation.Animation
+import android.view.animation.TranslateAnimation
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.edit
 import androidx.viewpager2.widget.ViewPager2
@@ -167,6 +170,12 @@ class MainActivity : LoadingActivity() {
             R.id.main_tg -> {
                 val intent =
                     Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/fvblackbox"))
+                startActivity(intent)
+            }
+
+            R.id.fake_location -> {
+                val intent = Intent(this, ListActivity::class.java)
+                intent.putExtra("userID", 0)
                 startActivity(intent)
             }
         }

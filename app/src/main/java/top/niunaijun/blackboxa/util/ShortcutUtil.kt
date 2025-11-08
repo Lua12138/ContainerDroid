@@ -9,6 +9,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.afollestad.materialdialogs.MaterialDialog
 import com.afollestad.materialdialogs.input.input
 import top.niunaijun.blackboxa.R
+import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.bean.AppInfo
 import top.niunaijun.blackboxa.view.main.ShortcutActivity
 

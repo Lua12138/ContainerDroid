@@ -1,7 +1,6 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
-import android.net.wifi.WifiInfo;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -10,6 +9,7 @@ import black.android.net.wifi.BRIWifiManagerStub;
 import black.android.net.wifi.BRWifiInfo;
 import black.android.net.wifi.BRWifiSsid;
 import black.android.os.BRServiceManager;
+import android.net.wifi.WifiInfo;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;

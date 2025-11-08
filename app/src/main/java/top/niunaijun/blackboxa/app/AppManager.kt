@@ -2,6 +2,8 @@ package top.niunaijun.blackboxa.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackbox.utils.compat.BuildCompat
 import top.niunaijun.blackboxa.view.main.BlackBoxLoader
 
 object AppManager {
