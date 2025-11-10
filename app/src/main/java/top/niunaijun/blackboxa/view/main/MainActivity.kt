@@ -169,12 +169,6 @@ class MainActivity : LoadingActivity() {
                     Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/fvblackbox"))
                 startActivity(intent)
             }
-
-            R.id.fake_location -> {
-                val intent = Intent(this, ListActivity::class.java)
-                intent.putExtra("userID", 0)
-                startActivity(intent)
-            }
         }
 
         return true
