@@ -15,6 +15,7 @@ import top.niunaijun.blackboxa.databinding.ActivityListBinding
 import top.niunaijun.blackboxa.util.InjectionUtil
 import top.niunaijun.blackboxa.util.inflate
 import top.niunaijun.blackboxa.view.base.BaseActivity
+import top.niunaijun.blackboxa.view.list.ListActivity
 
 /**
  *
@@ -22,7 +23,7 @@ import top.niunaijun.blackboxa.view.base.BaseActivity
  * @CreateDate: 2022/3/14
  */
 class FakeManagerActivity : BaseActivity() {
-    val TAG: String = "FakeManagerActivity"
+
     private val viewBinding: ActivityListBinding by inflate()
 
     //    private lateinit var mAdapter: ListAdapter
@@ -32,10 +33,6 @@ class FakeManagerActivity : BaseActivity() {
 //    private lateinit var viewModel: ListViewModel
 
     private var appList: List<FakeLocationBean> = ArrayList()
-
-//    override fun setOnItemClick() {
-//
-//    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,28 +45,7 @@ class FakeManagerActivity : BaseActivity() {
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
 
         mAdapter.setOnItemClick { _, _, data ->
-//            if (data.fakeLocation == null) {
-//                Log.d(TAG, "null")
-//            }
-//            viewModel.setPattern(data.userID, data.packageName, BLocationManager.OWN_MODE)
-//            val location: BLocation = BLocation(12.4, 124.1)
-//            viewModel.setLocation(data.userID, data.packageName, location)
-//            viewModel.set
-
-            val intent = Intent(this, FollowMyLocationOverlay::class.java)
-//            var bLocation = BLocation(12.34, 122.5)
-//             if data.fakeLocation is null, activity get passed intent crash when extract object
-//            intent.putExtra("notEmpty", true)
-            if (data.fakeLocation == null) {
-                intent.putExtra("notEmpty", false)
-            } else {
-                intent.putExtra("notEmpty", true)
-            }
-            intent.putExtra("location", data.fakeLocation)
-
-//            intent.putExtra("name", "yes")
-            startActivity(intent)
-//            finishWithResult(data.packageName)
+            finishWithResult(data.packageName)
         }
 
         initSearchView()
@@ -170,8 +146,8 @@ class FakeManagerActivity : BaseActivity() {
 
     companion object {
         fun start(context: Context, onlyShowXp: Boolean) {
-            val intent = Intent(context, FollowMyLocationOverlay::class.java)
-//            intent.putExtra("onlyShowXp", false)
+            val intent = Intent(context, ListActivity::class.java)
+            intent.putExtra("onlyShowXp", false)
             context.startActivity(intent)
         }
     }

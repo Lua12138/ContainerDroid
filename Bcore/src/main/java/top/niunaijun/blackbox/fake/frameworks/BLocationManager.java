@@ -27,14 +27,6 @@ public class BLocationManager {
         return sLocationManager;
     }
 
-    private IBLocationManagerService getService() {
-        if (mService != null && mService.asBinder().pingBinder()) {
-            return mService;
-        }
-        mService = IBLocationManagerService.Stub.asInterface(BlackBoxCore.get().getService(ServiceManager.LOCATION_MANAGER));
-        return getService();
-    }
-
     public static boolean isFakeLocationEnable() {
         return get().getPattern(BActivityThread.getUserId(), BActivityThread.getAppPackageName()) != CLOSE_MODE;
     }
@@ -157,4 +149,11 @@ public class BLocationManager {
     }
 
 
+    private IBLocationManagerService getService() {
+        if (mService != null && mService.asBinder().pingBinder()) {
+            return mService;
+        }
+        mService = IBLocationManagerService.Stub.asInterface(BlackBoxCore.get().getService(ServiceManager.LOCATION_MANAGER));
+        return getService();
+    }
 }
