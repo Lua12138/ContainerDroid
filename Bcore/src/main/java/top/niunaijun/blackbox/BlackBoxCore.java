@@ -157,6 +157,9 @@ public class BlackBoxCore extends ClientConfiguration {
                 }
             }
         }
+        if (isMainProcess()) {
+//            BLocationManager.get().setCell(0, "com.ppp", new BCell());
+        }
         PineConfig.debug = true;
         PineConfig.debuggable = true;
         HookManager.get().init();

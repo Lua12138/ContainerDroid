@@ -31,10 +31,6 @@ public class ProxyManifest {
         return String.format(Locale.CHINA, "top.niunaijun.blackbox.proxy.ProxyActivity$P%d", index);
     }
 
-    public static String TransparentProxyActivity(int index) {
-        return String.format(Locale.CHINA, "top.niunaijun.blackbox.proxy.TransparentProxyActivity$P%d", index);
-    }
-
     public static String getProxyService(int index) {
         return String.format(Locale.CHINA, "top.niunaijun.blackbox.proxy.ProxyService$P%d", index);
     }
