@@ -16,16 +16,13 @@ interface IBLocationManagerService {
 
     void setAllCell(int userId, String pkg,in  List<BCell> cell);
 
-    void setNeighboringCell(int userId, String pkg,in  List<BCell> cells);
-    List<BCell> getNeighboringCell(int userId, String pkg);
+    void setSurroundingCell(int userId, String pkg,in  List<BCell> cells);
 
     void setGlobalCell(in BCell cell);
 
     void setGlobalAllCell(in List<BCell> cell);
 
-    void setGlobalNeighboringCell(in List<BCell> cell);
-
-    List<BCell> getGlobalNeighboringCell();
+    void setGlobalSurroundingCell(in List<BCell> cell);
 
     BCell getCell(int userId, String pkg);
 

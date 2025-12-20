@@ -89,17 +89,10 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
     }
 
     @Override
-    public void setNeighboringCell(int userId, String pkg, List<BCell> cells) {
+    public void setSurroundingCell(int userId, String pkg, List<BCell> cells) {
         synchronized (mLocationConfigs) {
             getOrCreateConfig(userId, pkg).allCell = cells;
             save();
-        }
-    }
-
-    @Override
-    public List<BCell> getNeighboringCell(int userId, String pkg) {
-        synchronized (mLocationConfigs) {
-            return getOrCreateConfig(userId, pkg).allCell;
         }
     }
 
@@ -120,17 +113,10 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
     }
 
     @Override
-    public void setGlobalNeighboringCell(List<BCell> cells) {
+    public void setGlobalSurroundingCell(List<BCell> cells) {
         synchronized (mGlobalConfig) {
             mGlobalConfig.neighboringCellInfo = cells;
             save();
-        }
-    }
-
-    @Override
-    public List<BCell> getGlobalNeighboringCell() {
-        synchronized (mGlobalConfig) {
-            return mGlobalConfig.neighboringCellInfo;
         }
     }
 
@@ -259,14 +245,13 @@ public class BLocationManagerService extends IBLocationManagerService.Stub imple
             }
         } catch (Exception e) {
             e.printStackTrace();
-            Slog.d(TAG, "bad config");
+            Slog.d(TAG,"bad config");
             FileUtils.deleteDir(BEnvironment.getFakeLocationConf());
         } finally {
             parcel.recycle();
             CloseUtils.close(is);
         }
     }
-
     @Override
     public void systemReady() {
         loadConfig();
