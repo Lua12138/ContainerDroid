@@ -22,7 +22,6 @@ import java.util.Set;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.IBActivityThread;
 import top.niunaijun.blackbox.core.env.BEnvironment;
-import top.niunaijun.blackbox.core.system.notification.BNotificationManagerService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
@@ -210,7 +209,6 @@ public class BProcessManagerService implements ISystemService {
             mPidsSelfLocked.remove(record);
 
             removeProc(record);
-            BNotificationManagerService.get().deletePackageNotification(record.getPackageName(), record.userId);
         }
     }
 
