@@ -11,8 +11,6 @@ import java.util.Objects;
 
 import black.android.location.BRILocationListener;
 import black.android.location.BRILocationManagerStub;
-import black.android.location.provider.BRProviderProperties;
-import black.android.location.provider.ProviderProperties;
 import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.entity.location.BLocation;
@@ -87,7 +85,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
-                return BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName()).convert2SystemLocation();
+                return BLocationManager.get().getLocation(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
             }
             return method.invoke(who, args);
         }
@@ -119,13 +117,6 @@ public class ILocationManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            ProviderProperties providerProperties = (ProviderProperties) method.invoke(who, args);
-            if (BLocationManager.isFakeLocationEnable()) {
-                BRProviderProperties.get(providerProperties)._set_mHasNetworkRequirement(false);
-                if (BLocationManager.get().getCell(BActivityThread.getUserId(), BActivityThread.getAppPackageName()) == null) {
-                    BRProviderProperties.get(providerProperties)._set_mHasCellRequirement(false);
-                }
-            }
             return method.invoke(who, args);
         }
     }
@@ -145,10 +136,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            if (BLocationManager.isFakeLocationEnable()) {
-                return LocationManager.GPS_PROVIDER;
-            }
-            return method.invoke(who, args);
+            return LocationManager.GPS_PROVIDER;
         }
     }
 
