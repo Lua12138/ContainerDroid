@@ -62,11 +62,7 @@ public class ActiveServices {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                try {
-                    BlackBoxCore.getContext().startService(stubServiceIntent);
-                } catch (Throwable e) {
-                    e.printStackTrace();
-                }
+                BlackBoxCore.getContext().startService(stubServiceIntent);
             }
         }).start();
     }

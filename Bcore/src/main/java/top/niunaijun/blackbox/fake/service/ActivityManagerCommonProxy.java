@@ -8,7 +8,6 @@ import android.os.Bundle;
 import android.os.IBinder;
 
 import java.lang.reflect.Method;
-import java.util.Objects;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
@@ -17,7 +16,6 @@ import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.provider.FileProviderHandler;
 import top.niunaijun.blackbox.utils.ComponentUtils;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
-import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.StartActivityCompat;
 
@@ -39,74 +37,66 @@ public class ActivityManagerCommonProxy {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             MethodParameterUtils.replaceFirstAppPkg(args);
-            Intent intent = getIntent(args);
-            Slog.d(TAG, "Hook in : " + intent);
-            assert intent != null;
-            if (intent.getParcelableExtra("_B_|_target_") != null) {
-                return method.invoke(who, args);
-            }
-            if (ComponentUtils.isRequestInstall(intent)) {
-                intent.setData(FileProviderHandler.convertFileUri(BActivityThread.getApplication(), intent.getData()));
-                return method.invoke(who, args);
-            }
-            String dataString = intent.getDataString();
-            if (dataString != null && dataString.equals("package:" + BActivityThread.getAppPackageName())) {
-                intent.setData(Uri.parse("package:" + BlackBoxCore.getHostPkg()));
-            }
-
-            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
-                    intent,
-                    GET_META_DATA,
-                    StartActivityCompat.getResolvedType(args),
-                    BActivityThread.getUserId());
-            if (resolveInfo == null) {
-                String origPackage = intent.getPackage();
-                if (intent.getPackage() == null && intent.getComponent() == null) {
-                    intent.setPackage(BActivityThread.getAppPackageName());
-                } else {
-                    origPackage = intent.getPackage();
+            Object arg = args[getIntentIndex()];
+            if (arg instanceof Intent) {
+                Intent intent = (Intent) arg;
+                if (intent.getParcelableExtra("_B_|_target_") != null) {
+                    return method.invoke(who, args);
                 }
-                resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
+                if (ComponentUtils.isRequestInstall(intent)) {
+                    intent.setData(FileProviderHandler.convertFileUri(BActivityThread.getApplication(), intent.getData()));
+                    return method.invoke(who, args);
+                }
+                String dataString = intent.getDataString();
+                if (dataString != null && dataString.equals("package:" + BActivityThread.getAppPackageName())) {
+                    intent.setData(Uri.parse("package:" + BlackBoxCore.getHostPkg()));
+                }
+
+                ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
                         intent,
                         GET_META_DATA,
                         StartActivityCompat.getResolvedType(args),
                         BActivityThread.getUserId());
                 if (resolveInfo == null) {
-                    intent.setPackage(origPackage);
-                    return method.invoke(who, args);
+                    String origPackage = intent.getPackage();
+                    if (intent.getPackage() == null && intent.getComponent() == null) {
+                        intent.setPackage(BActivityThread.getAppPackageName());
+                    } else {
+                        origPackage = intent.getPackage();
+                    }
+                    resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
+                            intent,
+                            GET_META_DATA,
+                            StartActivityCompat.getResolvedType(args),
+                            BActivityThread.getUserId());
+                    if (resolveInfo == null) {
+                        intent.setPackage(origPackage);
+                        return method.invoke(who, args);
+                    }
                 }
+
+
+                intent.setExtrasClassLoader(who.getClass().getClassLoader());
+                intent.setComponent(new ComponentName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name));
+                BlackBoxCore.getBActivityManager().startActivityAms(BActivityThread.getUserId(),
+                        StartActivityCompat.getIntent(args),
+                        StartActivityCompat.getResolvedType(args),
+                        StartActivityCompat.getResultTo(args),
+                        StartActivityCompat.getResultWho(args),
+                        StartActivityCompat.getRequestCode(args),
+                        StartActivityCompat.getFlags(args),
+                        StartActivityCompat.getOptions(args));
+                return 0;
             }
-
-
-            intent.setExtrasClassLoader(who.getClass().getClassLoader());
-            intent.setComponent(new ComponentName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name));
-            BlackBoxCore.getBActivityManager().startActivityAms(BActivityThread.getUserId(),
-                    StartActivityCompat.getIntent(args),
-                    StartActivityCompat.getResolvedType(args),
-                    StartActivityCompat.getResultTo(args),
-                    StartActivityCompat.getResultWho(args),
-                    StartActivityCompat.getRequestCode(args),
-                    StartActivityCompat.getFlags(args),
-                    StartActivityCompat.getOptions(args));
-            return 0;
+            return method.invoke(who, args);
         }
 
-        private Intent getIntent(Object[] args) {
-            int index;
+        private int getIntentIndex() {
             if (BuildCompat.isR()) {
-                index = 3;
+                return 3;
             } else {
-                index = 2;
+                return 2;
             }
-            if (args[index] instanceof Intent) {
-                return (Intent) args[index];
-            }
-            for (Object arg : args) {
-                if (arg instanceof Intent) {
-                    return (Intent) arg;
-                }
-            }
-            return null;
         }
     }
 
