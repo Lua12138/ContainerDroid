@@ -1,6 +1,5 @@
 package top.niunaijun.blackbox.fake.frameworks;
 
-import android.os.IBinder;
 import android.os.RemoteException;
 
 import java.util.ArrayList;
@@ -175,19 +174,5 @@ public class BLocationManager {
         return null;
     }
 
-    public void requestLocationUpdates(IBinder listener) {
-        try {
-            getService().requestLocationUpdates(listener, BActivityThread.getAppPackageName(), BActivityThread.getUserId());
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-    }
 
-    public void removeUpdates(IBinder listener) {
-        try {
-            getService().removeUpdates(listener);
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-    }
 }

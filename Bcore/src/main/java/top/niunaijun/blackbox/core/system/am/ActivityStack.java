@@ -24,7 +24,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 import black.android.app.BRActivityManagerNative;
 import black.android.app.BRIActivityManager;
@@ -301,7 +300,6 @@ public class ActivityStack {
                                           int userId, ActivityRecord sourceRecord, ActivityInfo activityInfo, int launchMode) {
         ActivityRecord selfRecord = newActivityRecord(intent, activityInfo, resultTo, userId);
         Intent shadow = startActivityProcess(userId, intent, activityInfo, selfRecord);
-        shadow.setAction(UUID.randomUUID().toString());
         shadow.addFlags(launchMode);
         if (resultTo == null) {
             shadow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
