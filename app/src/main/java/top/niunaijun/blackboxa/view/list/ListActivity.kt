@@ -10,7 +10,6 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import cbfg.rvadapter.RVAdapter
 import com.ferfalk.simplesearchview.SimpleSearchView
 import top.niunaijun.blackboxa.R
 import top.niunaijun.blackboxa.bean.InstalledAppBean
@@ -24,7 +23,7 @@ class ListActivity : BaseActivity() {
 
     private val viewBinding: ActivityListBinding by inflate()
 
-    private lateinit var mAdapter: RVAdapter<InstalledAppBean>
+    private lateinit var mAdapter: ListAdapter
 
     private lateinit var viewModel: ListViewModel
 
@@ -36,12 +35,13 @@ class ListActivity : BaseActivity() {
 
         initToolbar(viewBinding.toolbarLayout.toolbar, R.string.installed_app, true)
 
-        mAdapter = RVAdapter<InstalledAppBean>(this,ListAdapter()).bind(viewBinding.recyclerView).setItemClickListener { _, item, _ ->
-            finishWithResult(item.packageName)
-        }
-
+        mAdapter = ListAdapter()
+        viewBinding.recyclerView.adapter = mAdapter
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
 
+        mAdapter.setOnItemClick { _, _, data ->
+            finishWithResult(data.packageName)
+        }
 
         initSearchView()
         initViewModel()
@@ -106,7 +106,7 @@ class ListActivity : BaseActivity() {
         val newList = this.appList.filter {
             it.name.contains(newText, true) or it.packageName.contains(newText, true)
         }
-        mAdapter.setItems(newList)
+        mAdapter.replaceData(newList)
     }
 
     private val openDocumentedResult = registerForActivityResult(ActivityResultContracts.GetContent()) {
@@ -161,7 +161,7 @@ class ListActivity : BaseActivity() {
     companion object{
         fun start(context: Context,onlyShowXp:Boolean){
             val intent = Intent(context,ListActivity::class.java)
-            intent.putExtra("onlyShowXp",onlyShowXp)
+            intent.putExtra("onlyShowXp",false)
             context.startActivity(intent)
         }
     }
