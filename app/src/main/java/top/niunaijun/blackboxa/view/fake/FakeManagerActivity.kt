@@ -10,7 +10,6 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import cbfg.rvadapter.RVAdapter
 import com.ferfalk.simplesearchview.SimpleSearchView
 import top.niunaijun.blackbox.entity.location.BLocation
 import top.niunaijun.blackbox.fake.frameworks.BLocationManager
@@ -32,7 +31,7 @@ class FakeManagerActivity : BaseActivity() {
     private val viewBinding: ActivityListBinding by inflate()
 
     //    private lateinit var mAdapter: ListAdapter
-    private lateinit var mAdapter: RVAdapter<FakeLocationBean>
+    private lateinit var mAdapter: FakeLocationAdapter
 
     private lateinit var viewModel: FakeLocationViewModel
 
@@ -70,24 +69,23 @@ class FakeManagerActivity : BaseActivity() {
 
         initToolbar(viewBinding.toolbarLayout.toolbar, R.string.fake_location, true)
 
-        mAdapter = RVAdapter<FakeLocationBean>(this,FakeLocationAdapter()).bind(viewBinding.recyclerView)
-            .setItemClickListener { _, data, _ ->
-
-                localUserId = data.userID
-                localPackageName = data.packageName
-                val intent = Intent(this, FollowMyLocationOverlay::class.java)
-         if (data.fakeLocation == null) {
-                    intent.putExtra("notEmpty", false)
-                } else {
-                    intent.putExtra("notEmpty", true)
-                }
-                intent.putExtra("location", data.fakeLocation)
-
-                locationResult.launch(intent)
-            }
-
+        mAdapter = FakeLocationAdapter()
+        viewBinding.recyclerView.adapter = mAdapter
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
 
+        mAdapter.setOnItemClick { _, _, data ->
+            localUserId = data.userID
+            localPackageName = data.packageName
+
+            val intent = Intent(this, FollowMyLocationOverlay::class.java)
+            if (data.fakeLocation == null) {
+                intent.putExtra("notEmpty", false)
+            } else {
+                intent.putExtra("notEmpty", true)
+            }
+            intent.putExtra("location", data.fakeLocation)
+            locationResult.launch(intent)
+        }
 
         initSearchView()
         initViewModel()
@@ -173,7 +171,7 @@ class FakeManagerActivity : BaseActivity() {
         val newList = this.appList.filter {
             it.name.contains(newText, true) or it.packageName.contains(newText, true)
         }
-        mAdapter.setItems(newList)
+        mAdapter.replaceData(newList)
     }
 
     private fun finishWithResult(source: String) {

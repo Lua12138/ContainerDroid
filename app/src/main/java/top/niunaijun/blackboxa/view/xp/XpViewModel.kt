@@ -17,6 +17,8 @@ class XpViewModel(private val repo:XpRepository):BaseViewModel() {
 
     val resultLiveData = MutableLiveData<String>()
 
+    val launchLiveData = MutableLiveData<Boolean>()
+
     fun getInstalledModule() {
         launchOnUI {
             repo.getInstallModules(appsLiveData)
