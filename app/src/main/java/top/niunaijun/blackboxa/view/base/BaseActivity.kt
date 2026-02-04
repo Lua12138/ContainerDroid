@@ -26,8 +26,4 @@ open class BaseActivity : AppCompatActivity() {
             }
         }
     }
-
-    protected fun currentUserID():Int{
-        return intent.getIntExtra("userID", 0)
-    }
 }

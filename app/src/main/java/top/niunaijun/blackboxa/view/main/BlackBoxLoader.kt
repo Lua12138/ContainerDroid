@@ -4,12 +4,13 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import top.niunaijun.blackbox.BlackBoxCore
-import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration
+import top.niunaijun.blackbox.utils.FileUtils
+import top.niunaijun.blackbox.utils.compat.BuildCompat
 import top.niunaijun.blackboxa.app.App
-import top.niunaijun.blackboxa.app.rocker.RockerManager
 import top.niunaijun.blackboxa.biz.cache.AppSharedPreferenceDelegate
+import java.io.File
 
 /**
  *
@@ -24,6 +25,7 @@ class BlackBoxLoader {
     private var mHideXposed by AppSharedPreferenceDelegate(App.getContext(), false)
     private var mDaemonEnable by AppSharedPreferenceDelegate(App.getContext(), false)
 
+    private val mLogDir = getLogDir(App.getContext())
 
     fun hideRoot(): Boolean {
         return mHideRoot
@@ -61,9 +63,8 @@ class BlackBoxLoader {
                 context: Context?,
                 userId: Int
             ) {
-                Log.d(TAG, "beforeCreateApplication: pkg $packageName, processName $processName,userID:${BActivityThread.getUserId()}")
+                Log.d(TAG, "beforeCreateApplication: pkg $packageName, processName $processName")
             }
-
 
             override fun beforeApplicationOnCreate(
                 packageName: String?,
@@ -81,7 +82,6 @@ class BlackBoxLoader {
                 userId: Int
             ) {
                 Log.d(TAG, "afterApplicationOnCreate: pkg $packageName, processName $processName")
-                RockerManager.init(application,userId)
             }
         })
     }
@@ -109,6 +109,12 @@ class BlackBoxLoader {
     fun doOnCreate(context: Context) {
         BlackBoxCore.get().doCreate()
 
+        BlackBoxCore.get().setExceptionHandler { t, e ->
+            val logFile = File(mLogDir, "${System.currentTimeMillis()}.log")
+//            PrintWriter(FileWriter(logFile)).use {
+//                e.printStackTrace(it)
+//            }
+        }
     }
 
 
@@ -116,6 +122,20 @@ class BlackBoxLoader {
 
         val TAG: String = BlackBoxLoader::class.java.simpleName
 
+        fun getLogDir(context: Context): String {
+            return if (BuildCompat.isR()) {
+                val log = File(
+                    context.externalCacheDir?.parentFile?.parentFile?.parentFile?.parentFile,
+                    "Download/BlackBoxLog"
+                )
+                FileUtils.mkdirs(log)
+                log.absolutePath
+            } else {
+                val log = File(context.externalCacheDir?.parentFile, "BlackBoxLog")
+                FileUtils.mkdirs(log)
+                log.absolutePath
+            }
+        }
     }
 
 }
