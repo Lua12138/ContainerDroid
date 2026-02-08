@@ -11,7 +11,6 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -299,15 +298,6 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             // fake google play
             return "com.android.vending";
-        }
-    }
-
-    @ProxyMethod("getSharedLibraries")
-    public static class GetSharedLibraries extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            // todo
-            return ParceledListSliceCompat.create(new ArrayList<>());
         }
     }
 }
