@@ -28,7 +28,6 @@ import java.util.Map;
 
 import black.android.app.BRActivityThread;
 import black.android.os.BRUserHandle;
-import me.weishu.reflection.Reflection;
 import top.canyie.pine.PineConfig;
 import top.niunaijun.blackbox.app.LauncherActivity;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
@@ -56,6 +55,7 @@ import top.niunaijun.blackbox.utils.ShellUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
+import top.niunaijun.blackbox.utils.compat.HiddenApiCompat;
 import top.niunaijun.blackbox.utils.compat.XposedParserCompat;
 import top.niunaijun.blackbox.utils.provider.ProviderCall;
 
@@ -122,7 +122,7 @@ public class BlackBoxCore extends ClientConfiguration {
         if (clientConfiguration == null) {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
-        Reflection.unseal(context);
+        HiddenApiCompat.exemptAll(context);
         sContext = context;
         mClientConfiguration = clientConfiguration;
         initNotificationManager();
