@@ -6,6 +6,8 @@ import android.os.Process;
 import androidx.annotation.Keep;
 
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import dalvik.system.DexFile;
@@ -38,6 +40,40 @@ public class NativeCore {
     public static native void addIORule(String targetPath, String relocatePath);
 
     public static native void hideXposed();
+
+    @Keep
+    public static Class<?> getFileSystemClass() {
+        try {
+            Field fs = File.class.getDeclaredField("fs");
+            fs.setAccessible(true);
+            Object fileSystem = fs.get(null);
+            if (fileSystem != null) {
+                return fileSystem.getClass();
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    @Keep
+    public static Method findMethod(Class<?> clazz, String name, String desc) {
+        if (clazz == null) {
+            return null;
+        }
+        try {
+            for (Method declaredMethod : clazz.getDeclaredMethods()) {
+                if (name.equals(declaredMethod.getName())
+                        && desc.equals(top.niunaijun.jnihook.MethodUtils.getDesc(declaredMethod))) {
+                    declaredMethod.setAccessible(true);
+                    return declaredMethod;
+                }
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 
     public static void dumpDex(ClassLoader classLoader, String packageName) {
         List<Long> cookies = DexFileCompat.getCookies(classLoader);

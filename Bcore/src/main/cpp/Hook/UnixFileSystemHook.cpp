@@ -3,6 +3,7 @@
 //
 
 #include <IO.h>
+#include "BoxCore.h"
 #include "UnixFileSystemHook.h"
 #import "JniHook/JniHook.h"
 #include "BaseHook.h"
@@ -15,6 +16,11 @@
 HOOK_JNI(jstring, canonicalize0, JNIEnv *env, jobject obj, jstring path) {
     jstring redirect = IO::redirectPath(env, path);
     return orig_canonicalize0(env, obj, redirect);
+}
+
+HOOK_JNI(jstring, canonicalize0_v35, JNIEnv *env, jobject obj, jstring path, jboolean isAtLeastTargetSdk35) {
+    jstring redirect = IO::redirectPath(env, path);
+    return orig_canonicalize0_v35(env, obj, redirect, isAtLeastTargetSdk35);
 }
 
 /*
@@ -83,7 +89,7 @@ HOOK_JNI(jboolean, createDirectory0, JNIEnv *env, jobject obj, jobject path) {
  * Method:    setLastModifiedTime0
  * Signature: (Ljava/io/File;J)Z
  */
-HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file, jobject time) {
+HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file, jlong time) {
     jobject redirect = IO::redirectPath(env, file);
     return orig_setLastModifiedTime0(env, obj, redirect, time);
 }
@@ -103,35 +109,62 @@ HOOK_JNI(jboolean, setReadOnly0, JNIEnv *env, jobject obj, jobject file) {
  * Method:    getSpace0
  * Signature: (Ljava/io/File;I)J
  */
-HOOK_JNI(jboolean, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
+HOOK_JNI(jlong, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
     jobject redirect = IO::redirectPath(env, file);
     return orig_getSpace0(env, obj, redirect, t);
 }
 
+static void Hook(JNIEnv *env, jclass clazz, const char *method_name, const char *sign,
+                 void *new_fun, void **orig_fun) {
+    jobject method = BoxCore::findMethod(env, clazz, method_name, sign);
+    if (method == nullptr) {
+        ALOGD("skip hook, method not found: %s %s", method_name, sign);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+        return;
+    }
+    JniHook::HookJniFun(env, method, new_fun, orig_fun, false);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+    env->DeleteLocalRef(method);
+}
+
 void UnixFileSystemHook::init(JNIEnv *env) {
-    const char *className = "java/io/UnixFileSystem";
-    JniHook::HookJniFun(env, className, "canonicalize0", "(Ljava/lang/String;)Ljava/lang/String;",
-                        (void *) new_canonicalize0, (void **) (&orig_canonicalize0), false);
+    jclass clazz = reinterpret_cast<jclass>(BoxCore::getFileSystemClass(env));
+    if (clazz == nullptr) {
+        ALOGE("getFileSystemClass failed.");
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+        return;
+    }
+    if (BoxCore::getApiLevel() >= 35) {
+        Hook(env, clazz, "canonicalize0", "(Ljava/lang/String;Z)Ljava/lang/String;",
+             (void *) new_canonicalize0_v35, (void **) (&orig_canonicalize0_v35));
+    } else {
+        Hook(env, clazz, "canonicalize0", "(Ljava/lang/String;)Ljava/lang/String;",
+             (void *) new_canonicalize0, (void **) (&orig_canonicalize0));
+    }
 //    JniHook::HookJniFun(env, className, "getBooleanAttributes0", "(Ljava/lang/String;)I",
 //                        (void *) new_getBooleanAttributes0,
 //                        (void **) (&orig_getBooleanAttributes0), false);
-    JniHook::HookJniFun(env, className, "getLastModifiedTime0", "(Ljava/io/File;)J",
-                        (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0),
-                        false);
-    JniHook::HookJniFun(env, className, "setPermission0", "(Ljava/io/File;IZZ)Z",
-                        (void *) new_setPermission0, (void **) (&orig_setPermission0), false);
-    JniHook::HookJniFun(env, className, "createFileExclusively0", "(Ljava/lang/String;)Z",
-                        (void *) new_createFileExclusively0,
-                        (void **) (&orig_createFileExclusively0), false);
-    JniHook::HookJniFun(env, className, "list0", "(Ljava/io/File;)[Ljava/lang/String;",
-                        (void *) new_list0, (void **) (&orig_list0), false);
-    JniHook::HookJniFun(env, className, "createDirectory0", "(Ljava/io/File;)Z",
-                        (void *) new_createDirectory0, (void **) (&orig_createDirectory0), false);
-    JniHook::HookJniFun(env, className, "setLastModifiedTime0", "(Ljava/io/File;J)Z",
-                        (void *) new_setLastModifiedTime0, (void **) (&orig_setLastModifiedTime0),
-                        false);
-    JniHook::HookJniFun(env, className, "setReadOnly0", "(Ljava/io/File;)Z",
-                        (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0), false);
-    JniHook::HookJniFun(env, className, "getSpace0", "(Ljava/io/File;I)J",
-                        (void *) new_getSpace0, (void **) (&orig_getSpace0), false);
+    Hook(env, clazz, "getLastModifiedTime0", "(Ljava/io/File;)J",
+         (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0));
+    Hook(env, clazz, "setPermission0", "(Ljava/io/File;IZZ)Z",
+         (void *) new_setPermission0, (void **) (&orig_setPermission0));
+    Hook(env, clazz, "createFileExclusively0", "(Ljava/lang/String;)Z",
+         (void *) new_createFileExclusively0, (void **) (&orig_createFileExclusively0));
+    Hook(env, clazz, "list0", "(Ljava/io/File;)[Ljava/lang/String;",
+         (void *) new_list0, (void **) (&orig_list0));
+    Hook(env, clazz, "createDirectory0", "(Ljava/io/File;)Z",
+         (void *) new_createDirectory0, (void **) (&orig_createDirectory0));
+    Hook(env, clazz, "setLastModifiedTime0", "(Ljava/io/File;J)Z",
+         (void *) new_setLastModifiedTime0, (void **) (&orig_setLastModifiedTime0));
+    Hook(env, clazz, "setReadOnly0", "(Ljava/io/File;)Z",
+         (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0));
+    Hook(env, clazz, "getSpace0", "(Ljava/io/File;I)J",
+         (void *) new_getSpace0, (void **) (&orig_getSpace0));
+    env->DeleteLocalRef(clazz);
 }

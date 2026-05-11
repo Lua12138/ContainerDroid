@@ -46,6 +46,12 @@ static const char *GetMethodName(JNIEnv *env, jobject javaMethod) {
     return env->GetStringUTFChars(desc, JNI_FALSE);
 }
 
+static jclass GetMethodDeclaringClassObject(JNIEnv *env, jobject javaMethod) {
+    jclass methodClass = env->FindClass("java/lang/reflect/Method");
+    jmethodID getDeclaringClass = env->GetMethodID(methodClass, "getDeclaringClass", "()Ljava/lang/Class;");
+    return reinterpret_cast<jclass>(env->CallObjectMethod(javaMethod, getDeclaringClass));
+}
+
 inline static uint32_t GetAccessFlags(const char *art_method) {
     return *reinterpret_cast<const uint32_t *>(art_method + HookEnv.art_method_flags_offset);
 }
@@ -110,10 +116,10 @@ bool CheckFlags(void *artMethod) {
 
 void JniHook::HookJniFun(JNIEnv *env, jobject java_method, void *new_fun,
                          void **orig_fun, bool is_static) {
-    const char *class_name = GetMethodDeclaringClass(env, java_method);
     const char *method_name = GetMethodName(env, java_method);
     const char *sign = GetMethodDesc(env, java_method);
-    HookJniFun(env, class_name, method_name, sign, new_fun, orig_fun, is_static);
+    jclass clazz = GetMethodDeclaringClassObject(env, java_method);
+    HookJniFun(env, clazz, method_name, sign, new_fun, orig_fun, is_static);
 }
 
 void
@@ -128,6 +134,14 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
         env->ExceptionClear();
         return;
     }
+    HookJniFun(env, clazz, method_name, sign, new_fun, orig_fun, is_static);
+}
+
+void JniHook::HookJniFun(JNIEnv *env, jclass clazz, const char *method_name, const char *sign,
+                         void *new_fun, void **orig_fun, bool is_static) {
+    if (HookEnv.art_method_native_offset == 0 || clazz == nullptr) {
+        return;
+    }
     jmethodID method = nullptr;
     if (is_static) {
         method = env->GetStaticMethodID(clazz, method_name, sign);
@@ -136,7 +150,7 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
     }
     if (!method) {
         env->ExceptionClear();
-        ALOGD("get method id fail: %s %s", class_name, method_name);
+        ALOGD("get method id fail: %s", method_name);
         return;
     }
     JNINativeMethod gMethods[] = {
@@ -145,19 +159,19 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
 
     auto artMethod = reinterpret_cast<uintptr_t *>(GetArtMethod(env, clazz, method));
     if (!CheckFlags(artMethod)) {
-        ALOGE("check flags error. class：%s, method：%s", class_name, method_name);
+        ALOGE("check flags error. method：%s", method_name);
         return;
     }
     *orig_fun = reinterpret_cast<void *>(artMethod[HookEnv.art_method_native_offset]);
     if (env->RegisterNatives(clazz, gMethods, 1) < 0) {
-        ALOGE("jni hook error. class：%s, method：%s", class_name, method_name);
+        ALOGE("jni hook error. method：%s", method_name);
         return;
     }
     // FastNative
     if (HookEnv.api_level == __ANDROID_API_O__ || HookEnv.api_level == __ANDROID_API_O_MR1__) {
         AddAccessFlag((char *) artMethod, kAccFastNative);
     }
-    ALOGD("register class：%s, method：%s success!", class_name, method_name);
+    ALOGD("register method：%s success!", method_name);
 }
 
 __attribute__((section (".mytext")))  JNICALL void native_offset
@@ -265,7 +279,8 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
         }
     }
 
-    HookEnv.method_utils_class = env->FindClass("top/niunaijun/jnihook/MethodUtils");
+    jclass methodUtilsClass = env->FindClass("top/niunaijun/jnihook/MethodUtils");
+    HookEnv.method_utils_class = reinterpret_cast<jclass>(env->NewGlobalRef(methodUtilsClass));
     HookEnv.get_method_desc_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getDesc",
                                                         "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
     HookEnv.get_method_declaring_class_id = env->GetStaticMethodID(HookEnv.method_utils_class,
@@ -274,4 +289,3 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
     HookEnv.get_method_name_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getMethodName",
                                                         "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
 }
-

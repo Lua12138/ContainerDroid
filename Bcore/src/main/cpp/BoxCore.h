@@ -17,6 +17,9 @@ public:
     static jstring redirectPathString(JNIEnv *env, jstring path);
     static jobject redirectPathFile(JNIEnv *env, jobject path);
     static jlongArray loadEmptyDex(JNIEnv *env);
+    static jclass getNativeCoreClass();
+    static jobject getFileSystemClass(JNIEnv *env);
+    static jobject findMethod(JNIEnv *env, jclass clazz, const char *name, const char *desc);
 };
 
 

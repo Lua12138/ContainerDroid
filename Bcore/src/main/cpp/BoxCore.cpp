@@ -21,6 +21,8 @@ struct {
     jmethodID redirectPathFile;
     jmethodID loadEmptyDex;
     jmethodID loadEmptyDexL;
+    jmethodID getFileSystemClass;
+    jmethodID findMethod;
     int api_level;
 } VMEnv;
 
@@ -59,6 +61,29 @@ jlongArray BoxCore::loadEmptyDex(JNIEnv *env) {
     return (jlongArray) env->CallStaticObjectMethod(VMEnv.NativeCoreClass, VMEnv.loadEmptyDex);
 }
 
+jclass BoxCore::getNativeCoreClass() {
+    return VMEnv.NativeCoreClass;
+}
+
+jobject BoxCore::getFileSystemClass(JNIEnv *env) {
+    env = ensureEnvCreated();
+    return env->CallStaticObjectMethod(VMEnv.NativeCoreClass, VMEnv.getFileSystemClass);
+}
+
+jobject BoxCore::findMethod(JNIEnv *env, jclass clazz, const char *name, const char *desc) {
+    env = ensureEnvCreated();
+    jstring methodName = env->NewStringUTF(name);
+    jstring methodDesc = env->NewStringUTF(desc);
+    jobject method = env->CallStaticObjectMethod(VMEnv.NativeCoreClass, VMEnv.findMethod, clazz, methodName, methodDesc);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        method = nullptr;
+    }
+    env->DeleteLocalRef(methodName);
+    env->DeleteLocalRef(methodDesc);
+    return method;
+}
+
 int BoxCore::getApiLevel() {
     return VMEnv.api_level;
 }
@@ -91,6 +116,10 @@ void init(JNIEnv *env, jobject clazz, jint api_level) {
                                                     "(Ljava/io/File;)Ljava/io/File;");
     VMEnv.loadEmptyDex = env->GetStaticMethodID(VMEnv.NativeCoreClass, "loadEmptyDex",
                                                 "()[J");
+    VMEnv.getFileSystemClass = env->GetStaticMethodID(VMEnv.NativeCoreClass, "getFileSystemClass",
+                                                      "()Ljava/lang/Class;");
+    VMEnv.findMethod = env->GetStaticMethodID(VMEnv.NativeCoreClass, "findMethod",
+                                              "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Method;");
 
     JniHook::InitJniHook(env, api_level);
 }
