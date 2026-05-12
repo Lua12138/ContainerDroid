@@ -11,13 +11,28 @@ class WelcomeActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        if (handleTestIntent(intent)) {
+            return
+        }
         jump()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (handleTestIntent(intent)) {
+            return
+        }
         previewInstalledAppList()
         jump()
+    }
+
+    private fun handleTestIntent(intent: Intent?): Boolean {
+        if (!BlackBoxTestConfig.shouldRun(intent)) {
+            return false
+        }
+        BlackBoxTestRunner.start(this, BlackBoxTestConfig.getTestPackage(intent))
+        return true
     }
 
     private fun jump() {

@@ -168,4 +168,6 @@ dependencies {
 
     //悬浮窗
     implementation 'com.imuxuan:floatingview:1.6'
+
+    testImplementation 'junit:junit:4.13.2'
 }
