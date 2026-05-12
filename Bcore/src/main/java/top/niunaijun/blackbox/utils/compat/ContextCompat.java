@@ -10,7 +10,6 @@ import black.android.content.BRAttributionSource;
 import black.android.content.BRAttributionSourceState;
 import black.android.content.BRContentResolver;
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 
 /**
  * Created by Milk on 3/31/21.
@@ -57,7 +56,7 @@ public class ContextCompat {
             BRContentResolver.get(context.getContentResolver())._set_mPackageName(BlackBoxCore.getHostPkg());
 
             if (BuildCompat.isS()) {
-                fixAttributionSourceState(BRContextImpl.get(context).getAttributionSource(), BActivityThread.getBUid());
+                fixAttributionSourceState(BRContextImpl.get(context).getAttributionSource(), BlackBoxCore.getHostUid());
             }
         } catch (Exception e) {
             e.printStackTrace();

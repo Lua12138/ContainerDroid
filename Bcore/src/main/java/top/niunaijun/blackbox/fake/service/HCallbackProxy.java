@@ -46,6 +46,9 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
  */
 public class HCallbackProxy implements IInjectHook, Handler.Callback {
     public static final String TAG = "HCallbackStub";
+    private static final int MSG_LAUNCH_ACTIVITY = 100;
+    private static final int MSG_CREATE_SERVICE = 114;
+    private static final int MSG_EXECUTE_TRANSACTION = 159;
     private Handler.Callback mOtherCallback;
     private AtomicBoolean mBeing = new AtomicBoolean(false);
 
@@ -78,21 +81,21 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
         if (!mBeing.getAndSet(true)) {
             try {
                 if (BuildCompat.isPie()) {
-                    if (msg.what == BRActivityThreadH.get().EXECUTE_TRANSACTION()) {
+                    if (msg.what == getExecuteTransactionMessage()) {
                         if (handleLaunchActivity(msg.obj)) {
                             getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
                             return true;
                         }
                     }
                 } else {
-                    if (msg.what == BRActivityThreadH.get().LAUNCH_ACTIVITY()) {
+                    if (msg.what == getLaunchActivityMessage()) {
                         if (handleLaunchActivity(msg.obj)) {
                             getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
                             return true;
                         }
                     }
                 }
-                if (msg.what == BRActivityThreadH.get().CREATE_SERVICE()) {
+                if (msg.what == getCreateServiceMessage()) {
                     return handleCreateService(msg.obj);
                 }
                 if (mOtherCallback != null) {
@@ -106,6 +109,30 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
         return false;
     }
 
+    private int getLaunchActivityMessage() {
+        Integer message = BRActivityThreadH.get().LAUNCH_ACTIVITY();
+        if (message != null) {
+            return message;
+        }
+        return MSG_LAUNCH_ACTIVITY;
+    }
+
+    private int getCreateServiceMessage() {
+        Integer message = BRActivityThreadH.get().CREATE_SERVICE();
+        if (message != null) {
+            return message;
+        }
+        return MSG_CREATE_SERVICE;
+    }
+
+    private int getExecuteTransactionMessage() {
+        Integer message = BRActivityThreadH.get().EXECUTE_TRANSACTION();
+        if (message != null) {
+            return message;
+        }
+        return MSG_EXECUTE_TRANSACTION;
+    }
+
     private Object getLaunchActivityItem(Object clientTransaction) {
         List<Object> mActivityCallbacks = BRClientTransaction.get(clientTransaction).mActivityCallbacks();
 
@@ -115,6 +142,14 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             }
         }
         return null;
+    }
+
+    private void fixLaunchActivityItem(Object launchActivityItem, Intent intent, ActivityInfo activityInfo) {
+        if (launchActivityItem == null)
+            return;
+        LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(launchActivityItem);
+        launchActivityItemContext._set_mIntent(intent);
+        launchActivityItemContext._set_mInfo(activityInfo);
     }
 
     private boolean handleLaunchActivity(Object client) {
@@ -174,6 +209,7 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             BlackBoxCore.getBActivityManager().onActivityCreated(taskId, token, stubRecord.mActivityRecord);
 
             if (BuildCompat.isS()) {
+                fixLaunchActivityItem(r, stubRecord.mTarget, activityInfo);
                 Object record = BRActivityThread.get(BlackBoxCore.mainThread()).getLaunchingActivity(token);
                 ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(record);
                 clientRecordContext._set_intent(stubRecord.mTarget);
@@ -182,9 +218,7 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
 
                 checkActivityClient();
             } else if (BuildCompat.isPie()) {
-                LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
-                launchActivityItemContext._set_mIntent(stubRecord.mTarget);
-                launchActivityItemContext._set_mInfo(activityInfo);
+                fixLaunchActivityItem(r, stubRecord.mTarget, activityInfo);
             } else {
                 ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);
                 clientRecordContext._set_intent(stubRecord.mTarget);

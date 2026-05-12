@@ -43,6 +43,8 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
  */
 @SuppressLint({"SdCardPath", "NewApi"})
 public class PackageManagerCompat {
+    private static final int REQUESTED_PERMISSION_REQUIRED = 1;
+    private static final int REQUESTED_PERMISSION_GRANTED = 2;
 
     public static PackageInfo generatePackageInfo(BPackageSettings ps, int flags, BPackageUserState state, int userId) {
         if (ps == null) {
@@ -179,11 +181,8 @@ public class PackageManagerCompat {
                 for (int i = 0; i < N; i++) {
                     final String perm = p.requestedPermissions.get(i);
                     pi.requestedPermissions[i] = perm;
-                    // The notion of required permissions is deprecated but for compatibility.
-//                    pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_REQUIRED;
-//                    if (grantedPermissions != null && grantedPermissions.contains(perm)) {
-//                        pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
-//                    }
+                    pi.requestedPermissionsFlags[i] |= REQUESTED_PERMISSION_REQUIRED;
+                    pi.requestedPermissionsFlags[i] |= REQUESTED_PERMISSION_GRANTED;
                 }
             }
         }

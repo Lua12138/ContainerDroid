@@ -5,7 +5,7 @@ import android.os.IInterface;
 import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
-import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
@@ -54,7 +54,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             if (arg instanceof String) {
                 args[0] = mAppPkg;
             } else if (arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
-                ContextCompat.fixAttributionSourceState(arg, BActivityThread.getBUid());
+                ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
             }
         }
         try {

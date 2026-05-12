@@ -6,6 +6,7 @@ import android.app.IServiceConnection;
 import android.content.ComponentName;
 import android.content.IIntentReceiver;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
@@ -67,6 +68,24 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
     public static final String TAG = "ActivityManagerStub";
+
+    private static boolean isRequestedPermission(String permission) {
+        String packageName = BActivityThread.getAppPackageName();
+        if (packageName == null || permission == null) {
+            return false;
+        }
+        PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
+                packageName, PackageManager.GET_PERMISSIONS, BActivityThread.getUserId());
+        if (packageInfo == null || packageInfo.requestedPermissions == null) {
+            return false;
+        }
+        for (String requestedPermission : packageInfo.requestedPermissions) {
+            if (permission.equals(requestedPermission)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     @Override
     protected Object getWho() {
@@ -583,7 +602,23 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             MethodParameterUtils.replaceLastUid(args);
             String permission = (String) args[0];
             if (permission.equals(Manifest.permission.ACCOUNT_MANAGER)
-                    || permission.equals(Manifest.permission.SEND_SMS)) {
+                    || permission.equals(Manifest.permission.SEND_SMS)
+                    || isRequestedPermission(permission)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkPermissionForDevice")
+    public static class checkPermissionForDevice extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceLastUid(args);
+            String permission = (String) args[0];
+            if (permission.equals(Manifest.permission.ACCOUNT_MANAGER)
+                    || permission.equals(Manifest.permission.SEND_SMS)
+                    || isRequestedPermission(permission)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
             return method.invoke(who, args);

@@ -2,12 +2,17 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.content.pm.PackageManager;
 
+import java.lang.reflect.Method;
+
 import black.android.app.BRActivityThread;
 import black.android.app.BRContextImpl;
 import black.android.os.BRServiceManager;
 import black.android.permission.BRIPermissionManagerStub;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
+import top.niunaijun.blackbox.fake.hook.MethodHook;
+import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.service.base.PkgMethodProxy;
 import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
 import top.niunaijun.blackbox.utils.Reflector;
@@ -20,6 +25,23 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
     public static final String TAG = "IPermissionManagerProxy";
 
     private static final String P = "permissionmgr";
+
+    private static boolean isRequestedPermission(String packageName, String permissionName) {
+        if (packageName == null || permissionName == null) {
+            return false;
+        }
+        android.content.pm.PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
+                packageName, PackageManager.GET_PERMISSIONS, BActivityThread.getUserId());
+        if (packageInfo == null || packageInfo.requestedPermissions == null) {
+            return false;
+        }
+        for (String requestedPermission : packageInfo.requestedPermissions) {
+            if (permissionName.equals(requestedPermission)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public IPermissionManagerProxy() {
         super(BRServiceManager.get().getService(P));
@@ -64,6 +86,44 @@ public class IPermissionManagerProxy extends BinderInvocationStub {
             addMethodHook(new ValueMethodProxy("notifyPackageUse", 0));
             addMethodHook(new ValueMethodProxy("setInstantAppCookie", false));
             addMethodHook(new ValueMethodProxy("isInstantApp", false));
+        }
+    }
+
+    @ProxyMethod("checkPermission")
+    public static class CheckPermission extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String packageName = null;
+            for (Object arg : args) {
+                if (arg instanceof String && BlackBoxCore.get().isInstalled((String) arg, BActivityThread.getUserId())) {
+                    packageName = (String) arg;
+                    break;
+                }
+            }
+            if (packageName != null) {
+                for (Object arg : args) {
+                    if (arg instanceof String && isRequestedPermission(packageName, (String) arg)) {
+                        return PackageManager.PERMISSION_GRANTED;
+                    }
+                }
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("checkUidPermission")
+    public static class CheckUidPermission extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String packageName = BActivityThread.getAppPackageName();
+            if (packageName != null) {
+                for (Object arg : args) {
+                    if (arg instanceof String && isRequestedPermission(packageName, (String) arg)) {
+                        return PackageManager.PERMISSION_GRANTED;
+                    }
+                }
+            }
+            return method.invoke(who, args);
         }
     }
 
