@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
 
@@ -35,6 +36,7 @@ public class ProxyContentProvider extends ContentProvider {
             extras.setClassLoader(AppConfig.class.getClassLoader());
             AppConfig appConfig = extras.getParcelable(AppConfig.KEY);
             BActivityThread.currentActivityThread().initProcess(appConfig);
+            NativeCore.installSeccompShieldIfNeeded();
 
             Bundle bundle = new Bundle();
             BundleCompat.putBinder(bundle, "_Black_|_client_", BActivityThread.currentActivityThread());

@@ -339,6 +339,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
 
         NativeCore.init(Build.VERSION.SDK_INT);
+        NativeCore.installSeccompShieldIfNeeded();
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
 

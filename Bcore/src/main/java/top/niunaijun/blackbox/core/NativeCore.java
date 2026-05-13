@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.core;
 
 
 import android.os.Process;
+import android.os.Build;
 
 import androidx.annotation.Keep;
 
@@ -27,6 +28,7 @@ import static top.niunaijun.blackbox.core.env.BEnvironment.EMPTY_JAR;
  */
 public class NativeCore {
     public static final String TAG = "NativeCore";
+    private static final SeccompInstallGate SECCOMP_INSTALL_GATE = new SeccompInstallGate();
 
     static {
         new File("");
@@ -40,6 +42,15 @@ public class NativeCore {
     public static native void addIORule(String targetPath, String relocatePath);
 
     public static native void hideXposed();
+
+    public static native void installSeccompShield();
+
+    public static void installSeccompShieldIfNeeded() {
+        if (!SECCOMP_INSTALL_GATE.tryInstall(Build.SUPPORTED_ABIS)) {
+            return;
+        }
+        installSeccompShield();
+    }
 
     @Keep
     public static Class<?> getFileSystemClass() {

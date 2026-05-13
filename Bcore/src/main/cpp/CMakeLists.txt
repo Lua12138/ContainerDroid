@@ -23,6 +23,7 @@ add_library( # Sets the name of the library.
         SHARED
         # Provides a relative path to your source file(s).
         BoxCore.cpp
+        SeccompShield.cpp
         ${SRC1}
         ${SRC2}
         ${SRC3}

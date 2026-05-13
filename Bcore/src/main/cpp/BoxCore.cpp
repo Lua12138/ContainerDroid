@@ -12,6 +12,7 @@
 #include <Hook/BinderHook.h>
 #include <Hook/RuntimeHook.h>
 #include "Utils/HexDump.h"
+#include "SeccompShield.h"
 
 struct {
     JavaVM *vm;
@@ -135,11 +136,16 @@ void enableIO(JNIEnv *env, jclass clazz) {
     nativeHook(env);
 }
 
+void installSeccompShield(JNIEnv *env, jclass clazz) {
+    blackbox::seccomp::installSeccompShield();
+}
+
 static JNINativeMethod gMethods[] = {
-        {"hideXposed", "()V",                                     (void *) hideXposed},
-        {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
-        {"enableIO",   "()V",                                     (void *) enableIO},
-        {"init",       "(I)V",                                    (void *) init},
+        {"hideXposed",          "()V",                                     (void *) hideXposed},
+        {"addIORule",           "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
+        {"enableIO",            "()V",                                     (void *) enableIO},
+        {"installSeccompShield","()V",                                     (void *) installSeccompShield},
+        {"init",                "(I)V",                                    (void *) init},
 };
 
 int registerNativeMethods(JNIEnv *env, const char *className,
