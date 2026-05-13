@@ -17,6 +17,7 @@ import top.niunaijun.blackbox.fake.service.IAlarmManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAppOpsManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAppWidgetManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAutofillManagerProxy;
+import top.niunaijun.blackbox.fake.service.IClipboardManagerProxy;
 import top.niunaijun.blackbox.fake.service.IConnectivityManagerProxy;
 import top.niunaijun.blackbox.fake.service.IContextHubServiceProxy;
 import top.niunaijun.blackbox.fake.service.IDeviceIdentifiersPolicyProxy;
@@ -83,6 +84,7 @@ public class HookManager {
             addInjector(new HCallbackProxy());
             addInjector(new IAppOpsManagerProxy());
             addInjector(new INotificationManagerProxy());
+            addInjector(new IClipboardManagerProxy());
             addInjector(new IAlarmManagerProxy());
             addInjector(new IAppWidgetManagerProxy());
             addInjector(new ContentServiceStub());

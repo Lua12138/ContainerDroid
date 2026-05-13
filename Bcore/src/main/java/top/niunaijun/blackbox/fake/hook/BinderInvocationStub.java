@@ -12,6 +12,8 @@ import java.io.FileDescriptor;
 import java.util.Map;
 
 import black.android.os.BRServiceManager;
+import top.niunaijun.blackbox.binder.BlackBoxProxyCatalog;
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 
 /**
  * Created by Milk on 3/30/21.
@@ -23,6 +25,8 @@ import black.android.os.BRServiceManager;
  */
 public abstract class BinderInvocationStub extends ClassInvocationStub implements IBinder {
     private IBinder mBaseBinder;
+    private String mServiceName;
+    private String mInterfaceDescriptor;
 
     public BinderInvocationStub(IBinder baseBinder) {
         mBaseBinder = baseBinder;
@@ -35,7 +39,11 @@ public abstract class BinderInvocationStub extends ClassInvocationStub implement
     @Nullable
     @Override
     public String getInterfaceDescriptor() throws RemoteException {
-        return mBaseBinder.getInterfaceDescriptor();
+        if (mInterfaceDescriptor != null) {
+            return mInterfaceDescriptor;
+        }
+        mInterfaceDescriptor = mBaseBinder.getInterfaceDescriptor();
+        return mInterfaceDescriptor;
     }
 
     @Override
@@ -66,7 +74,24 @@ public abstract class BinderInvocationStub extends ClassInvocationStub implement
 
     @Override
     public boolean transact(int code, @NonNull Parcel data, @Nullable Parcel reply, int flags) throws RemoteException {
-        return mBaseBinder.transact(code, data, reply, flags);
+        boolean result = false;
+        String proxyResult = "forwarded";
+        try {
+            result = mBaseBinder.transact(code, data, reply, flags);
+            return result;
+        } catch (RemoteException e) {
+            proxyResult = "exception";
+            throw e;
+        } finally {
+            BlackBoxBinderMonitor.recordProxyCall(
+                    mServiceName,
+                    mInterfaceDescriptor,
+                    "transact#" + code,
+                    getClass().getSimpleName(),
+                    "flags=" + flags + ", data_size=" + safeDataSize(data),
+                    "return=" + result,
+                    proxyResult);
+        }
     }
 
     @Override
@@ -81,7 +106,27 @@ public abstract class BinderInvocationStub extends ClassInvocationStub implement
 
 
     protected void replaceSystemService(String name) {
+        mServiceName = name;
+        mInterfaceDescriptor = BlackBoxProxyCatalog.getInterfaceDescriptorForService(name);
         Map<String, IBinder> services = BRServiceManager.get().sCache();
         services.put(name, this);
+    }
+
+    @Override
+    protected String getProxyServiceName() {
+        return mServiceName;
+    }
+
+    @Override
+    protected String getProxyInterfaceDescriptor() {
+        return mInterfaceDescriptor;
+    }
+
+    private static int safeDataSize(Parcel data) {
+        try {
+            return data == null ? -1 : data.dataSize();
+        } catch (Throwable ignored) {
+            return -1;
+        }
     }
 }

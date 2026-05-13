@@ -140,11 +140,16 @@ void installSeccompShield(JNIEnv *env, jclass clazz) {
     blackbox::seccomp::installSeccompShield();
 }
 
+void enableBinderMonitor(JNIEnv *env, jclass clazz, jboolean recordNative, jboolean recordIoctl) {
+    BinderHook::configureBinderMonitor(recordNative == JNI_TRUE, recordIoctl == JNI_TRUE);
+}
+
 static JNINativeMethod gMethods[] = {
         {"hideXposed",          "()V",                                     (void *) hideXposed},
         {"addIORule",           "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
         {"enableIO",            "()V",                                     (void *) enableIO},
         {"installSeccompShield","()V",                                     (void *) installSeccompShield},
+        {"enableBinderMonitor", "(ZZ)V",                                   (void *) enableBinderMonitor},
         {"init",                "(I)V",                                    (void *) init},
 };
 

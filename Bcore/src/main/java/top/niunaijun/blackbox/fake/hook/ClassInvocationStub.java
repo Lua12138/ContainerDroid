@@ -8,6 +8,8 @@ import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
 
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
+import top.niunaijun.blackbox.binder.BlackBoxProxyCatalog;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
 /**
@@ -40,6 +42,14 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
     protected Object getBase() {
         return mBase;
+    }
+
+    protected String getProxyServiceName() {
+        return null;
+    }
+
+    protected String getProxyInterfaceDescriptor() {
+        return null;
     }
 
     protected void onlyProxy(boolean o) {
@@ -105,20 +115,56 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         MethodHook methodHook = mMethodHookMap.get(method.getName());
+        Object result = null;
+        String proxyResult = "forwarded";
         if (methodHook == null || !methodHook.isEnable()) {
             try {
-                return method.invoke(mBase, args);
+                result = method.invoke(mBase, args);
+                return result;
             } catch (Throwable e) {
+                proxyResult = "exception";
                 throw e.getCause();
+            } finally {
+                recordProxyEvent(method, args, result, proxyResult);
             }
         }
 
-        Object result = methodHook.beforeHook(mBase, method, args);
-        if (result != null) {
+        try {
+            result = methodHook.beforeHook(mBase, method, args);
+            if (result != null) {
+                proxyResult = "blocked";
+                return result;
+            }
+            result = methodHook.hook(mBase, method, args);
+            result = methodHook.afterHook(result);
+            proxyResult = "handled";
             return result;
+        } catch (Throwable e) {
+            proxyResult = "exception";
+            throw e;
+        } finally {
+            recordProxyEvent(method, args, result, proxyResult);
         }
-        result = methodHook.hook(mBase, method, args);
-        result = methodHook.afterHook(result);
-        return result;
+    }
+
+    private void recordProxyEvent(Method method, Object[] args, Object result, String proxyResult) {
+        BlackBoxBinderMonitor.recordProxyCall(
+                resolveProxyServiceName(),
+                resolveProxyInterfaceDescriptor(),
+                method == null ? null : method.getName(),
+                getClass().getSimpleName(),
+                args == null ? "0 args" : args.length + " args",
+                result == null ? "null" : result.getClass().getName(),
+                proxyResult);
+    }
+
+    private String resolveProxyServiceName() {
+        String serviceName = getProxyServiceName();
+        return serviceName == null ? BlackBoxProxyCatalog.getServiceName(getClass().getSimpleName()) : serviceName;
+    }
+
+    private String resolveProxyInterfaceDescriptor() {
+        String descriptor = getProxyInterfaceDescriptor();
+        return descriptor == null ? BlackBoxProxyCatalog.getInterfaceDescriptor(getClass().getSimpleName()) : descriptor;
     }
 }

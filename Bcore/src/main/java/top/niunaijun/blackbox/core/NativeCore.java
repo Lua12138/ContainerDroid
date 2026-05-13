@@ -45,6 +45,8 @@ public class NativeCore {
 
     public static native void installSeccompShield();
 
+    public static native void enableBinderMonitor(boolean recordNative, boolean recordIoctl);
+
     public static void installSeccompShieldIfNeeded() {
         if (!SECCOMP_INSTALL_GATE.tryInstall(Build.SUPPORTED_ABIS)) {
             return;

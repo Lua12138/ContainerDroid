@@ -31,4 +31,5 @@ dependencies {
     implementation project(':Bcore:black-fake')
     implementation "com.github.CodingGay.BlackReflection:core:$rootProject.ext.blackReflection"
     annotationProcessor "com.github.CodingGay.BlackReflection:compiler:$rootProject.ext.blackReflection"
+    testImplementation 'junit:junit:4.13.2'
 }

@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
@@ -52,14 +53,38 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         if ("asBinder".equals(method.getName())) {
             return method.invoke(mBase, args);
         }
+        boolean argsRewritten = false;
         if (args != null && args.length > 0) {
             Object arg = args[0];
             if (arg instanceof String) {
                 args[0] = BlackBoxCore.getHostPkg();
+                argsRewritten = true;
             } else if (arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
                 ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
+                argsRewritten = true;
             }
         }
-        return method.invoke(mBase, args);
+        Object result = null;
+        String proxyResult = "forwarded";
+        try {
+            result = method.invoke(mBase, args);
+            return result;
+        } catch (Throwable e) {
+            proxyResult = "exception";
+            Throwable cause = e.getCause();
+            throw cause == null ? e : cause;
+        } finally {
+            BlackBoxBinderMonitor.recordProxyCall(
+                    "settings_provider",
+                    "android.content.IContentProvider",
+                    method == null ? null : method.getName(),
+                    getClass().getSimpleName(),
+                    args == null ? "0 args" : args.length + " args",
+                    result == null ? "null" : result.getClass().getName(),
+                    proxyResult,
+                    "forwarded".equals(proxyResult),
+                    argsRewritten,
+                    false);
+        }
     }
 }

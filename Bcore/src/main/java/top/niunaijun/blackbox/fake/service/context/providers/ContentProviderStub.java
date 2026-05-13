@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
@@ -49,18 +50,38 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         if ("asBinder".equals(method.getName())) {
             return method.invoke(mBase, args);
         }
+        boolean argsRewritten = false;
         if (args != null && args.length > 0) {
             Object arg = args[0];
             if (arg instanceof String) {
                 args[0] = mAppPkg;
+                argsRewritten = true;
             } else if (arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
                 ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
+                argsRewritten = true;
             }
         }
+        Object result = null;
+        String proxyResult = "forwarded";
         try {
-            return method.invoke(mBase, args);
+            result = method.invoke(mBase, args);
+            return result;
         } catch (Throwable e) {
-            throw e.getCause();
+            proxyResult = "exception";
+            Throwable cause = e.getCause();
+            throw cause == null ? e : cause;
+        } finally {
+            BlackBoxBinderMonitor.recordProxyCall(
+                    "content_provider",
+                    "android.content.IContentProvider",
+                    method == null ? null : method.getName(),
+                    getClass().getSimpleName(),
+                    args == null ? "0 args" : args.length + " args",
+                    result == null ? "null" : result.getClass().getName(),
+                    proxyResult,
+                    "forwarded".equals(proxyResult),
+                    argsRewritten,
+                    false);
         }
     }
 

@@ -11,6 +11,7 @@
 class BinderHook : public BaseHook{
 public:
     static void init(JNIEnv *env);
+    static void configureBinderMonitor(bool recordNative, bool recordIoctl);
 };
 
 #endif //BLACKBOX_BINDERHOOK_H

@@ -57,6 +57,9 @@ import black.dalvik.system.BRVMRuntime;
 import top.canyie.pine.xposed.PineXposed;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
+import top.niunaijun.blackbox.binder.BinderMonitorConfig;
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
+import top.niunaijun.blackbox.binder.VirtualIdentity;
 import top.niunaijun.blackbox.app.dispatcher.AppServiceDispatcher;
 import top.niunaijun.blackbox.core.CrashHandler;
 import top.niunaijun.blackbox.core.IBActivityThread;
@@ -71,6 +74,7 @@ import top.niunaijun.blackbox.fake.delegate.AppInstrumentation;
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.frameworks.BXposedManager;
 import top.niunaijun.blackbox.fake.hook.HookManager;
+import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.Slog;
@@ -357,6 +361,14 @@ public class BActivityThread extends IBActivityThread.Stub {
         activityThreadAppBindData._set_providers(bindData.providers);
 
         mBoundApplication = bindData;
+        BinderMonitorConfig binderMonitorConfig = BinderMonitorConfig.load(BlackBoxCore.getContext());
+        BlackBoxBinderMonitor.init(
+                BlackBoxCore.getContext(),
+                binderMonitorConfig,
+                createBinderMonitorIdentity(packageName, processName));
+        NativeCore.enableBinderMonitor(
+                binderMonitorConfig.isEnabled() && binderMonitorConfig.isRecordNative(),
+                binderMonitorConfig.isEnabled() && binderMonitorConfig.isRecordIoctl());
 
         //ssl适配
         if (BRNetworkSecurityConfigProvider.getRealClass() != null) {
@@ -601,6 +613,17 @@ public class BActivityThread extends IBActivityThread.Stub {
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.afterApplicationOnCreate(packageName, processName, application, BActivityThread.getUserId());
         }
+    }
+
+    private static VirtualIdentity createBinderMonitorIdentity(String packageName, String processName) {
+        int virtualPid = BActivityThread.getAppPid();
+        return new VirtualIdentity(
+                ProxyManifest.getProcessName(virtualPid),
+                packageName,
+                processName,
+                BActivityThread.getBUid(),
+                BActivityThread.getUserId(),
+                virtualPid);
     }
 
     public static class AppBindData {
