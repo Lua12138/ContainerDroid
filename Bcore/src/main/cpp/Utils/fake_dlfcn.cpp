@@ -56,7 +56,7 @@ void *fake_dlopen(const char *libpath, int flags) {
     if (!maps) goto err_exit;
 
     while (!found && fgets(buff, sizeof(buff), maps))
-        if (strstr(buff, "r-xp") && strstr(buff, libpath)) found = 1;
+        if (strstr(buff, libpath) && (strstr(buff, "r--p") || strstr(buff, "r-xp"))) found = 1;
 
     fclose(maps);
 

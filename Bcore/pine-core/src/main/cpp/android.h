@@ -51,9 +51,20 @@ namespace pine {
         }
 
         static bool MoveJitInfo(void* from, void* to) {
-            if (LIKELY(jit_code_cache_ && move_obsolete_method_)) {
+            if (LIKELY(version < kR && jit_code_cache_ && move_obsolete_method_
+                       && jit_code_cache_validated_)) {
                 move_obsolete_method_(jit_code_cache_, from, to);
                 return true;
+            }
+            if (UNLIKELY(move_obsolete_method_ && version >= kR
+                         && !move_jit_info_validation_skip_logged_)) {
+                move_jit_info_validation_skip_logged_ = true;
+                LOGW("Skipping MoveJitInfo on Android R+ because ART JIT root sweeping is unstable");
+            }
+            if (UNLIKELY(move_obsolete_method_ && !jit_code_cache_validated_
+                         && !move_jit_info_validation_skip_logged_)) {
+                move_jit_info_validation_skip_logged_ = true;
+                LOGW("Skipping MoveJitInfo because JitCodeCache candidate was not validated");
             }
             return false;
         }
@@ -139,6 +150,8 @@ namespace pine {
 
         static void* jit_code_cache_;
         static void (*move_obsolete_method_)(void*, void*, void*);
+        static bool jit_code_cache_validated_;
+        static bool move_jit_info_validation_skip_logged_;
         DISALLOW_IMPLICIT_CONSTRUCTORS(Android);
     };
 

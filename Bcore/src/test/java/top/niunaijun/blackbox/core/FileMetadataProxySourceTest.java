@@ -1,0 +1,73 @@
+package top.niunaijun.blackbox.core;
+
+import org.junit.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+public class FileMetadataProxySourceTest {
+
+    @Test
+    public void fileMetadataProxyHooksJavaFileSystemMetadataLayer() throws Exception {
+        Path proxyPath = sourcePath(
+                "src/main/java/top/niunaijun/blackbox/fake/service/FileMetadataProxy.java",
+                "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/FileMetadataProxy.java");
+        assertTrue("FileMetadataProxy should exist for Java File metadata sanitization",
+                Files.exists(proxyPath));
+
+        String source = new String(Files.readAllBytes(proxyPath), StandardCharsets.UTF_8);
+        String hookManager = readSource(
+                "src/main/java/top/niunaijun/blackbox/fake/hook/HookManager.java",
+                "Bcore/src/main/java/top/niunaijun/blackbox/fake/hook/HookManager.java");
+
+        assertTrue("FileMetadataProxy should be registered with the generic injector set",
+                hookManager.contains("new FileMetadataProxy()"));
+        assertTrue("Proxy should target java.io.File's actual FileSystem instance rather than JNI native stubs",
+                source.contains("class FileMetadataProxy implements IInjectHook")
+                        && source.contains("File.class.getDeclaredField(\"fs\")")
+                        && source.contains("getDeclaredMethod(\"checkAccess\", File.class, int.class)")
+                        && source.contains("getDeclaredMethod(\"getLength\", File.class)"));
+        assertTrue("File metadata hooks should use Pine Java method hooks because Android 11 checkAccess/getLength are not native",
+                source.contains("Pine.hook(checkAccess")
+                        && source.contains("Pine.hook(getLength"));
+        assertTrue("File.canWrite(/proc/*/cmdline) should expose procfs write denial, not writable shim-file metadata",
+                source.contains("ACCESS_WRITE = 0x02")
+                        && source.contains("isProcCmdlineFile")
+                        && source.contains("callFrame.setResult(false)"));
+        assertTrue("File.length(/proc/*/cmdline) should expose procfs zero-length metadata",
+                source.contains("callFrame.setResult(0L)"));
+    }
+
+    @Test
+    public void unixFileSystemHookDoesNotTryToJniHookNonNativeMetadataMethods() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/UnixFileSystemHook.cpp",
+                "Bcore/src/main/cpp/Hook/UnixFileSystemHook.cpp");
+
+        assertFalse("Android 11 UnixFileSystem.checkAccess(File,int) is Java, so JniHook must not attempt it",
+                source.contains("Hook(env, clazz, \"checkAccess\", \"(Ljava/io/File;I)Z\""));
+        assertFalse("Android 11 UnixFileSystem.getLength(File) is Java, so JniHook must not attempt it",
+                source.contains("Hook(env, clazz, \"getLength\", \"(Ljava/io/File;)J\""));
+        assertFalse("Vendor-only zero-suffixed guesses should not be installed when they only create skip-hook noise",
+                source.contains("Hook(env, clazz, \"checkAccess0\", \"(Ljava/io/File;I)Z\"")
+                        || source.contains("Hook(env, clazz, \"getLength0\", \"(Ljava/io/File;)J\""));
+    }
+
+    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
+        return new String(Files.readAllBytes(sourcePath(moduleRelativePath, rootRelativePath)),
+                StandardCharsets.UTF_8);
+    }
+
+    private static Path sourcePath(String moduleRelativePath, String rootRelativePath) {
+        Path modulePath = Paths.get(moduleRelativePath);
+        if (Files.exists(modulePath)) {
+            return modulePath;
+        }
+        return Paths.get(rootRelativePath);
+    }
+}

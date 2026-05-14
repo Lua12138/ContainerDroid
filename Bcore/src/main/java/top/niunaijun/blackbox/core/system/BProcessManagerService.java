@@ -11,7 +11,9 @@ import android.os.RemoteException;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,6 +33,7 @@ import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ApplicationThreadCompat;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
+import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 import top.niunaijun.blackbox.utils.provider.ProviderCall;
 
 /**
@@ -43,6 +46,10 @@ import top.niunaijun.blackbox.utils.provider.ProviderCall;
  */
 public class BProcessManagerService implements ISystemService {
     public static final String TAG = "BProcessManager";
+    private static final int PROC_CMDLINE_MIN_BYTES = 76;
+    private static final int PROC_STATUS_MAX_BYTES = 2048;
+    private static final String SKIP_KILL_ON_BINDER_DIED_PROPERTY =
+            "debug.blackbox.skip_kill_on_binder_died";
 
     public static BProcessManagerService sBProcessManagerService = new BProcessManagerService();
     private final Map<Integer, Map<String, ProcessRecord>> mProcessMap = new HashMap<>();
@@ -179,7 +186,7 @@ public class BProcessManagerService implements ISystemService {
             appThread.linkToDeath(new IBinder.DeathRecipient() {
                 @Override
                 public void binderDied() {
-                    Log.d(TAG, "App Died: " + app.processName);
+                    logAppDied(app, appThread);
                     appThread.unlinkToDeath(this, 0);
                     onProcessDie(app);
                 }
@@ -196,9 +203,33 @@ public class BProcessManagerService implements ISystemService {
         app.initLock.open();
     }
 
+    private void logAppDied(ProcessRecord app, IBinder appThread) {
+        boolean binderAlive = false;
+        try {
+            binderAlive = appThread != null && appThread.isBinderAlive();
+        } catch (Throwable ignored) {
+        }
+        Log.d(TAG, "App Died: " + app.processName
+                + " package=" + app.getPackageName()
+                + " pid=" + app.pid
+                + " bpid=" + app.bpid
+                + " buid=" + app.buid
+                + " userId=" + app.userId
+                + " binderAlive=" + binderAlive);
+    }
+
     public void onProcessDie(ProcessRecord record) {
         synchronized (mProcessLock) {
-            record.kill();
+            logProcessStateBeforeKill(record);
+            if (isSkipKillOnBinderDiedEnabled()) {
+                Log.w(TAG, "skip record.kill() after binder death by debug property: "
+                        + SKIP_KILL_ON_BINDER_DIED_PROPERTY
+                        + " pid=" + record.pid
+                        + " process=" + record.processName
+                        + " package=" + record.getPackageName());
+            } else {
+                record.kill();
+            }
             Map<String, ProcessRecord> process = mProcessMap.get(record.buid);
             if (process != null) {
                 process.remove(record.processName);
@@ -323,12 +354,91 @@ public class BProcessManagerService implements ISystemService {
         return -1;
     }
 
+    private static void logProcessStateBeforeKill(ProcessRecord record) {
+        if (record == null) {
+            return;
+        }
+        File procDir = new File("/proc/" + record.pid);
+        Log.d(TAG, "Process death cleanup before kill: process=" + record.processName
+                + " package=" + record.getPackageName()
+                + " pid=" + record.pid
+                + " bpid=" + record.bpid
+                + " buid=" + record.buid
+                + " procExists=" + procDir.exists()
+                + " procStatus=" + readProcStatusSummary(record.pid));
+    }
+
+    private static String readProcStatusSummary(int pid) {
+        if (pid <= 0) {
+            return "invalid_pid";
+        }
+        File status = new File("/proc/" + pid + "/status");
+        if (!status.isFile()) {
+            return "missing";
+        }
+        byte[] buffer = new byte[PROC_STATUS_MAX_BYTES];
+        int read;
+        try (FileInputStream inputStream = new FileInputStream(status)) {
+            read = inputStream.read(buffer);
+        } catch (IOException e) {
+            return "read_error:" + e.getClass().getSimpleName();
+        }
+        if (read <= 0) {
+            return "empty";
+        }
+        String raw = new String(buffer, 0, read, StandardCharsets.UTF_8);
+        StringBuilder builder = new StringBuilder();
+        for (String line : raw.split("\n")) {
+            if (line.startsWith("Name:")
+                    || line.startsWith("State:")
+                    || line.startsWith("Tgid:")
+                    || line.startsWith("Pid:")
+                    || line.startsWith("PPid:")
+                    || line.startsWith("TracerPid:")
+                    || line.startsWith("Uid:")
+                    || line.startsWith("Gid:")
+                    || line.startsWith("Threads:")) {
+                if (builder.length() > 0) {
+                    builder.append("; ");
+                }
+                builder.append(line.trim());
+            }
+        }
+        return builder.length() == 0 ? "no_core_fields" : builder.toString();
+    }
+
+    private static boolean isSkipKillOnBinderDiedEnabled() {
+        return isTruthy(SystemPropertiesCompat.get(SKIP_KILL_ON_BINDER_DIED_PROPERTY));
+    }
+
+    private static boolean isTruthy(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim();
+        return "1".equals(normalized)
+                || "true".equalsIgnoreCase(normalized)
+                || "yes".equalsIgnoreCase(normalized)
+                || "on".equalsIgnoreCase(normalized);
+    }
+
     private static void createProc(ProcessRecord record) {
         File cmdline = new File(BEnvironment.getProcDir(record.bpid), "cmdline");
         try {
-            FileUtils.writeToFile(record.processName.getBytes(), cmdline);
+            FileUtils.writeToFile(buildProcCmdline(record.processName), cmdline);
         } catch (IOException ignored) {
         }
+    }
+
+    private static byte[] buildProcCmdline(String processName) {
+        if (processName == null) {
+            processName = "";
+        }
+        byte[] nameBytes = processName.getBytes(StandardCharsets.UTF_8);
+        int length = Math.max(PROC_CMDLINE_MIN_BYTES, nameBytes.length + 1);
+        byte[] cmdline = new byte[length];
+        System.arraycopy(nameBytes, 0, cmdline, 0, nameBytes.length);
+        return cmdline;
     }
 
     private static void removeProc(ProcessRecord record) {

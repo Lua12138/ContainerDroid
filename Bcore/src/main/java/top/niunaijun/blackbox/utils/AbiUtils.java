@@ -48,12 +48,12 @@ public class AbiUtils {
             while (entries.hasMoreElements()) {
                 ZipEntry zipEntry = entries.nextElement();
                 String name = zipEntry.getName();
-                if (name.startsWith("lib/arm64-v8a")) {
+                if (name.startsWith("lib/arm64-v8a/")) {
                     mLibs.add("arm64-v8a");
-                } else if (name.startsWith("lib/armeabi")) {
-                    mLibs.add("armeabi");
-                } else if (name.startsWith("lib/armeabi-v7a")) {
+                } else if (name.startsWith("lib/armeabi-v7a/")) {
                     mLibs.add("armeabi-v7a");
+                } else if (name.startsWith("lib/armeabi/")) {
+                    mLibs.add("armeabi");
                 }
             }
         } catch (Exception e) {
@@ -73,5 +73,30 @@ public class AbiUtils {
 
     public boolean isEmptyAib() {
         return mLibs.isEmpty();
+    }
+
+    public static String getPreferredAbi(File apkFile) {
+        return getPreferredAbi(apkFile, BlackBoxCore.is64Bit());
+    }
+
+    public static String getPreferredAbi(File apkFile, boolean is64BitRuntime) {
+        AbiUtils abiUtils = sAbiUtilsMap.get(apkFile);
+        if (abiUtils == null) {
+            abiUtils = new AbiUtils(apkFile);
+            sAbiUtilsMap.put(apkFile, abiUtils);
+        }
+        if (abiUtils.isEmptyAib()) {
+            return null;
+        }
+        if (is64BitRuntime) {
+            return abiUtils.mLibs.contains("arm64-v8a") ? "arm64-v8a" : null;
+        }
+        if (abiUtils.mLibs.contains("armeabi-v7a")) {
+            return "armeabi-v7a";
+        }
+        if (abiUtils.mLibs.contains("armeabi")) {
+            return "armeabi";
+        }
+        return null;
     }
 }

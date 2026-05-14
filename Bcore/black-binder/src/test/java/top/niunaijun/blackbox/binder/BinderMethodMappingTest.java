@@ -44,4 +44,12 @@ public class BinderMethodMappingTest {
         assertEquals("startService", mapping.resolve("android.app.IActivityManager", 18));
         assertEquals("checkPermission", mapping.resolve("android.content.pm.IPackageManager", 1));
     }
+
+    @Test
+    public void defaultMappingNamesLegacyServiceManagerLookups() {
+        BinderMethodMapping mapping = BinderMethodMapping.createDefault();
+
+        assertEquals("getService", mapping.resolve("android.os.IServiceManager", 1));
+        assertEquals("checkService", mapping.resolve("android.os.IServiceManager", 2));
+    }
 }

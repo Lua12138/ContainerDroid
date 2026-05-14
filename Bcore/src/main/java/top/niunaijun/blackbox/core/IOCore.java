@@ -9,6 +9,8 @@ import android.os.Process;
 import android.text.TextUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -172,5 +174,28 @@ public class IOCore {
         String cmdline = new File(BEnvironment.getProcDir(appPid), "cmdline").getAbsolutePath();
         rule.put(proc + "cmdline", cmdline);
         rule.put(selfProc + "cmdline", cmdline);
+
+        File version = ensureProcVersionFile(appPid);
+        if (version.isFile()) {
+            rule.put("/proc/version", version.getAbsolutePath());
+        }
+    }
+
+    private File ensureProcVersionFile(int appPid) {
+        File version = new File(BEnvironment.getProcDir(appPid), "version");
+        if (version.isFile() && version.length() > 0) {
+            return version;
+        }
+        String kernelVersion = System.getProperty("os.version");
+        if (TextUtils.isEmpty(kernelVersion)) {
+            kernelVersion = "4.14.186";
+        }
+        String banner = "Linux version " + kernelVersion
+                + " (android-build@localhost) #1 SMP PREEMPT\n";
+        try {
+            FileUtils.writeToFile(banner.getBytes(StandardCharsets.UTF_8), version);
+        } catch (IOException ignored) {
+        }
+        return version;
     }
 }

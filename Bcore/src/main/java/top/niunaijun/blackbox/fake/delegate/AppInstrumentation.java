@@ -107,7 +107,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
         checkHCallback();
         HookManager.get().checkEnv(IActivityClientProxy.class);
         ActivityInfo info = BRActivity.get(activity).mActivityInfo();
-        ContextCompat.fix(activity);
+        ContextCompat.fixVirtual(activity, BActivityThread.getAppPackageName());
         ActivityCompat.fix(activity);
         if (info.theme != 0) {
             activity.getTheme().applyStyle(info.theme, true);
@@ -117,7 +117,7 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
 
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
-        ContextCompat.fix(context);
+        ContextCompat.fixVirtual(context, BActivityThread.getAppPackageName());
         BActivityThread.currentActivityThread().loadXposed(context);
         return super.newApplication(cl, className, context);
     }

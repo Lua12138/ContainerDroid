@@ -15,12 +15,14 @@
  */
 HOOK_JNI(jstring, canonicalize0, JNIEnv *env, jobject obj, jstring path) {
     jstring redirect = IO::redirectPath(env, path);
-    return orig_canonicalize0(env, obj, redirect);
+    jstring canonical = orig_canonicalize0(env, obj, redirect);
+    return IO::reverseRedirectPath(env, canonical);
 }
 
 HOOK_JNI(jstring, canonicalize0_v35, JNIEnv *env, jobject obj, jstring path, jboolean isAtLeastTargetSdk35) {
     jstring redirect = IO::redirectPath(env, path);
-    return orig_canonicalize0_v35(env, obj, redirect, isAtLeastTargetSdk35);
+    jstring canonical = orig_canonicalize0_v35(env, obj, redirect, isAtLeastTargetSdk35);
+    return IO::reverseRedirectPath(env, canonical);
 }
 
 /*
@@ -147,9 +149,8 @@ void UnixFileSystemHook::init(JNIEnv *env) {
         Hook(env, clazz, "canonicalize0", "(Ljava/lang/String;)Ljava/lang/String;",
              (void *) new_canonicalize0, (void **) (&orig_canonicalize0));
     }
-//    JniHook::HookJniFun(env, className, "getBooleanAttributes0", "(Ljava/lang/String;)I",
-//                        (void *) new_getBooleanAttributes0,
-//                        (void **) (&orig_getBooleanAttributes0), false);
+    Hook(env, clazz, "getBooleanAttributes0", "(Ljava/lang/String;)I",
+         (void *) new_getBooleanAttributes0, (void **) (&orig_getBooleanAttributes0));
     Hook(env, clazz, "getLastModifiedTime0", "(Ljava/io/File;)J",
          (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0));
     Hook(env, clazz, "setPermission0", "(Ljava/io/File;IZZ)Z",

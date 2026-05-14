@@ -1,6 +1,5 @@
 package top.canyie.dreamland.utils;
 
-import android.system.ErrnoException;
 import android.util.Log;
 
 import java.io.BufferedReader;
@@ -18,6 +17,8 @@ import java.io.Reader;
  */
 public final class IOUtils {
     private static final String TAG = "IOUtils";
+    private static final String ERRNO_EXCEPTION_CLASS_NAME = "android.system.ErrnoException";
+
     private IOUtils() {}
 
     public static String readAllString(File file) throws IOException {
@@ -69,11 +70,26 @@ public final class IOUtils {
     }
 
     public static int getErrno(IOException e) {
-        for (Throwable cause = e;cause != null;cause = cause.getCause()) {
-            if (cause instanceof ErrnoException) {
-                return ((ErrnoException) cause).errno;
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            Integer errno = getErrno(cause);
+            if (errno != null) {
+                return errno;
             }
         }
         return 0;
+    }
+
+    private static Integer getErrno(Throwable cause) {
+        if (!ERRNO_EXCEPTION_CLASS_NAME.equals(cause.getClass().getName())) {
+            return null;
+        }
+        try {
+            Object errno = cause.getClass().getField("errno").get(cause);
+            if (errno instanceof Integer) {
+                return (Integer) errno;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 }

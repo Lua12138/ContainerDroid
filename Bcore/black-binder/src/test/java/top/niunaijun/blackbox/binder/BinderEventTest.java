@@ -51,4 +51,34 @@ public class BinderEventTest {
         assertTrue(json.contains("\"reply_expected\":true"));
         assertTrue(json.contains("\"source\":\"Pine.BinderProxy.transact\""));
     }
+
+    @Test
+    public void binderEventSerializesOptionalArgsSummary() {
+        VirtualIdentity identity = new VirtualIdentity(
+                "blackbox:p0",
+                "com.example.app",
+                "com.example.app",
+                1001,
+                0,
+                12);
+
+        BinderEvent event = BinderEvent.transact(
+                123456789L,
+                111,
+                222,
+                identity,
+                "android.content.pm.IPackageManager",
+                "getPackageInfo",
+                3,
+                0,
+                156,
+                true,
+                "Pine.BinderProxy.transact",
+                "package=com.bestv.tv.video.iqy.tjdx, flags=0, userId=0",
+                null);
+
+        String json = event.toJson();
+
+        assertTrue(json.contains("\"args_summary\":\"package=com.bestv.tv.video.iqy.tjdx, flags=0, userId=0\""));
+    }
 }

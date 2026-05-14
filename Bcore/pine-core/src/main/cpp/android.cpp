@@ -3,6 +3,8 @@
 //
 
 #include <unistd.h>
+#include <cstdio>
+#include <cstdint>
 #include <string>
 #include <dlfcn.h>
 #include <mutex>
@@ -31,6 +33,8 @@ void (*Android::make_visibly_initialized_)(void*, void*, bool) = nullptr;
 
 void* Android::jit_code_cache_ = nullptr;
 void (*Android::move_obsolete_method_)(void*, void*, void*) = nullptr;
+bool Android::jit_code_cache_validated_ = false;
+bool Android::move_jit_info_validation_skip_logged_ = false;
 
 void Android::Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, bool disable_hiddenapi_policy_for_platform) {
     Android::version = sdk_version;
@@ -140,6 +144,36 @@ static bool FakeProcessProfilingInfo() {
     return true;
 }
 
+static bool isReadableProcessAddress(const void* address) {
+    uintptr_t target = reinterpret_cast<uintptr_t>(address);
+    uintptr_t target_end = target + sizeof(void*);
+    if (target == 0 || target_end < target) {
+        return false;
+    }
+
+    FILE* maps = fopen("/proc/self/maps", "r");
+    if (maps == nullptr) {
+        return false;
+    }
+
+    bool readable = false;
+    char line[256];
+    while (fgets(line, sizeof(line), maps) != nullptr) {
+        unsigned long start = 0;
+        unsigned long end = 0;
+        char perms[5] = {};
+        if (sscanf(line, "%lx-%lx %4s", &start, &end, perms) == 3
+            && perms[0] == 'r'
+            && target >= static_cast<uintptr_t>(start)
+            && target_end <= static_cast<uintptr_t>(end)) {
+            readable = true;
+            break;
+        }
+    }
+    fclose(maps);
+    return readable;
+}
+
 bool Android::DisableProfileSaver() {
     // If users need this feature very much,
     // we may find these symbols during initialization in the future to reduce time consumption.
@@ -239,6 +273,8 @@ void Android::InitClassLinker(void* runtime, size_t java_vm_offset, const ElfImg
 }
 
 void Android::InitJitCodeCache(void *runtime, size_t java_vm_offset, const ElfImg *handle) {
+    jit_code_cache_validated_ = false;
+    move_jit_info_validation_skip_logged_ = false;
     move_obsolete_method_ = reinterpret_cast<void (*)(void*, void*, void*)>(handle->GetSymbolAddress(
             "_ZN3art3jit12JitCodeCache18MoveObsoleteMethodEPNS_9ArtMethodES3_"));
     if (UNLIKELY(!move_obsolete_method_)) {
@@ -267,10 +303,37 @@ void Android::InitJitCodeCache(void *runtime, size_t java_vm_offset, const ElfIm
         if (UNLIKELY((jit_code_cache_ = *profile_saver) == nullptr)) {
             LOGE("ProfileSaver is initialized but no jit code cache??? Fallback to clearing jit info.");
         }
+        jit_code_cache_validated_ = jit_code_cache_ != nullptr;
+        LOGD("Pine JitCodeCache candidate source=ProfileSaver jitCodeCache=%p validated=%d",
+             jit_code_cache_,
+             jit_code_cache_validated_ ? 1 : 0);
         return;
     }
-    constexpr size_t kDifference = sizeof(std::unique_ptr<void>) * 2;
-    jit_code_cache_ = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(runtime) + java_vm_offset + kDifference);
+    uintptr_t runtime_address = reinterpret_cast<uintptr_t>(runtime);
+    void* jit = *reinterpret_cast<void**>(
+            runtime_address + java_vm_offset + sizeof(std::unique_ptr<void>));
+    jit_code_cache_ = *reinterpret_cast<void**>(
+            runtime_address + java_vm_offset + sizeof(std::unique_ptr<void>) * 2);
+
+    void* jitCodeCacheFromJit = nullptr;
+    constexpr size_t kJitCodeCacheOffset = sizeof(void*);
+    void* jitCodeCacheSlot = reinterpret_cast<void*>(
+            reinterpret_cast<uintptr_t>(jit) + kJitCodeCacheOffset);
+    if (isReadableProcessAddress(jitCodeCacheSlot)) {
+        jitCodeCacheFromJit = *reinterpret_cast<void**>(jitCodeCacheSlot);
+    }
+    jit_code_cache_validated_ = jit_code_cache_ != nullptr && jitCodeCacheFromJit == jit_code_cache_;
+    LOGD("Pine JitCodeCache candidate runtime=%p javaVmOffset=%zu jit=%p jitCodeCache=%p jitCodeCacheFromJit=%p jitCodeCacheSlotOffset=%zu validated=%d",
+         runtime,
+         java_vm_offset,
+         jit,
+         jit_code_cache_,
+         jitCodeCacheFromJit,
+         kJitCodeCacheOffset,
+         jit_code_cache_validated_ ? 1 : 0);
+    if (!jit_code_cache_validated_) {
+        jit_code_cache_ = nullptr;
+    }
 }
 
 ALWAYS_INLINE ScopedGCCriticalSection::ScopedGCCriticalSection(void* self, art::GcCause cause,

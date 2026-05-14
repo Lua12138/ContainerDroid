@@ -205,6 +205,8 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
                 return true;
             }
 
+            BActivityThread.currentActivityThread().ensureInitialApplicationState("beforeLaunchActivity");
+
             int taskId = BRIActivityManager.get(BRActivityManagerNative.get().getDefault()).getTaskForActivity(token, false);
             BlackBoxCore.getBActivityManager().onActivityCreated(taskId, token, stubRecord.mActivityRecord);
 

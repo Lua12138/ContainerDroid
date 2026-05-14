@@ -15,8 +15,10 @@ import android.os.IInterface;
 import android.util.Log;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.List;
 
 import black.android.app.BRActivityManagerNative;
 import black.android.app.BRActivityManagerOreo;
@@ -298,12 +300,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     // 10.0
     @ProxyMethod("bindIsolatedService")
     public static class BindIsolatedService extends BindService {
-        @Override
-        protected Object beforeHook(Object who, Method method, Object[] args) throws Throwable {
-            // instanceName
-            args[6] = null;
-            return super.beforeHook(who, method, args);
-        }
     }
 
     @ProxyMethod("unbindService")
@@ -473,6 +469,90 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("publishContentProviders")
+    public static class PublishContentProviders extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int providersIndex = getProviderHoldersIndex(args);
+            if (providersIndex < 0) {
+                return null;
+            }
+
+            List<?> providers = (List<?>) args[providersIndex];
+            if (providers == null || providers.isEmpty()) {
+                return null;
+            }
+
+            List<Object> hostProviders = new ArrayList<>();
+            for (Object provider : providers) {
+                if (isHostPublishedProvider(provider)) {
+                    hostProviders.add(provider);
+                }
+            }
+
+            if (hostProviders.isEmpty()) {
+                return null;
+            }
+            if (hostProviders.size() == providers.size()) {
+                return method.invoke(who, args);
+            }
+
+            Object[] forwardedArgs = args.clone();
+            forwardedArgs[providersIndex] = hostProviders;
+            return method.invoke(who, forwardedArgs);
+        }
+
+        private int getProviderHoldersIndex(Object[] args) {
+            if (args == null) {
+                return -1;
+            }
+            for (int i = 0; i < args.length; i++) {
+                if (args[i] instanceof List) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private boolean isHostPublishedProvider(Object holder) {
+            ProviderInfo info = getProviderInfo(holder);
+            if (info == null) {
+                return false;
+            }
+            String hostPkg = BlackBoxCore.getHostPkg();
+            boolean hostPackage = hostPkg != null
+                    && (hostPkg.equals(info.packageName)
+                    || (info.applicationInfo != null && hostPkg.equals(info.applicationInfo.packageName)));
+            if (!hostPackage) {
+                return false;
+            }
+            String authority = info.authority;
+            return authority != null && ProxyManifest.isProxy(authority);
+        }
+
+        private ProviderInfo getProviderInfo(Object holder) {
+            if (holder == null) {
+                return null;
+            }
+            for (Class<?> clazz = holder.getClass(); clazz != null; clazz = clazz.getSuperclass()) {
+                try {
+                    Field field = clazz.getDeclaredField("info");
+                    field.setAccessible(true);
+                    Object value = field.get(holder);
+                    if (value instanceof ProviderInfo) {
+                        return (ProviderInfo) value;
+                    }
+                    return null;
+                } catch (NoSuchFieldException ignored) {
+                } catch (Throwable ignored) {
+                    return null;
+                }
+            }
+            return null;
         }
     }
 

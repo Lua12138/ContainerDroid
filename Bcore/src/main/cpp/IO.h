@@ -29,6 +29,10 @@ public:
     static jobject redirectPath(JNIEnv *env, jobject path);
 
     static const char *redirectPath(const char *__path);
+
+    static jstring reverseRedirectPath(JNIEnv *env, jstring path);
+
+    static const char *reverseRedirectPath(const char *__path);
 };
 
 

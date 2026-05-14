@@ -13,16 +13,22 @@ import android.content.pm.ServiceInfo;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import black.android.app.BRActivityThread;
 import black.android.app.BRContextImpl;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
+import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
+import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.core.env.AppSystemEnv;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.fake.hook.ProxyMethods;
 import top.niunaijun.blackbox.fake.service.base.PkgMethodProxy;
 import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
@@ -41,6 +47,8 @@ import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
  */
 public class IPackageManagerProxy extends BinderInvocationStub {
     public static final String TAG = "PackageManagerStub";
+    private static final String PACKAGE_SERVICE = "package";
+    private static final String IPACKAGE_MANAGER = "android.content.pm.IPackageManager";
 
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
@@ -166,6 +174,15 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    @ProxyMethods({"notifyDexLoad", "notifyDexLoadWithStatus"})
+    public static class NotifyDexLoad extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            dumpReportedDexLoads(method == null ? "notifyDexLoad" : method.getName(), args);
+            return method.invoke(who, args);
+        }
+    }
+
     @ProxyMethod("getPackageUid")
     public static class GetPackageUid extends MethodHook {
         @Override
@@ -173,6 +190,136 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             MethodParameterUtils.replaceFirstAppPkg(args);
             return method.invoke(who, args);
         }
+    }
+
+    private static void dumpReportedDexLoads(String methodName, Object[] args) {
+        String packageName = currentPackageName(firstStringArg(args));
+        if (packageName == null) {
+            return;
+        }
+        Set<String> paths = new LinkedHashSet<>();
+        collectDexLoadPaths(args, paths);
+        if (paths.isEmpty()) {
+            return;
+        }
+        for (String path : paths) {
+            try {
+                NativeCore.dumpDexPath(path, packageName, IPACKAGE_MANAGER + "." + methodName);
+            } catch (Throwable e) {
+                Slog.d(TAG, "dump reported dex path failed: " + path + " " + e);
+            }
+        }
+        BlackBoxBinderMonitor.recordProxyCall(
+                PACKAGE_SERVICE,
+                IPACKAGE_MANAGER,
+                methodName,
+                IPackageManagerProxy.class.getSimpleName(),
+                "package=" + packageName + ", paths=" + paths,
+                "dumped=" + paths.size(),
+                "forwarded",
+                true,
+                false,
+                false);
+    }
+
+    private static String currentPackageName(String fallback) {
+        try {
+            String packageName = BActivityThread.getAppPackageName();
+            if (packageName != null) {
+                return packageName;
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
+    }
+
+    private static String firstStringArg(Object[] args) {
+        if (args == null) {
+            return null;
+        }
+        for (Object arg : args) {
+            if (arg instanceof String) {
+                return (String) arg;
+            }
+        }
+        return null;
+    }
+
+    private static void collectDexLoadPaths(Object value, Set<String> out) {
+        collectDexLoadPaths(value, out, 0);
+    }
+
+    private static void collectDexLoadPaths(Object value, Set<String> out, int depth) {
+        if (value == null || out == null || depth > 4) {
+            return;
+        }
+        if (value instanceof String) {
+            collectDexPathStrings((String) value, out);
+            return;
+        }
+        if (value instanceof Map) {
+            for (Object entryObject : ((Map<?, ?>) value).entrySet()) {
+                Map.Entry<?, ?> entry = (Map.Entry<?, ?>) entryObject;
+                collectDexLoadPaths(entry.getKey(), out, depth + 1);
+                collectDexLoadPaths(entry.getValue(), out, depth + 1);
+            }
+            return;
+        }
+        if (value instanceof Iterable) {
+            for (Object item : (Iterable<?>) value) {
+                collectDexLoadPaths(item, out, depth + 1);
+            }
+            return;
+        }
+        if (value instanceof Object[]) {
+            for (Object item : (Object[]) value) {
+                collectDexLoadPaths(item, out, depth + 1);
+            }
+        }
+    }
+
+    private static void collectDexPathStrings(String value, Set<String> out) {
+        int index = 0;
+        while (index >= 0 && index < value.length()) {
+            int start = value.indexOf('/', index);
+            if (start < 0) {
+                break;
+            }
+            int end = start + 1;
+            while (end < value.length() && isDexPathChar(value.charAt(end))) {
+                end++;
+            }
+            String path = value.substring(start, end);
+            if (looksLikeDexPath(path)) {
+                out.add(path);
+            }
+            index = end;
+        }
+    }
+
+    private static boolean isDexPathChar(char ch) {
+        return ch > ' '
+                && ch != ']'
+                && ch != '['
+                && ch != '}'
+                && ch != '{'
+                && ch != ','
+                && ch != ';'
+                && ch != '!'
+                && ch != '"'
+                && ch != '\'';
+    }
+
+    private static boolean looksLikeDexPath(String path) {
+        if (path == null || !path.startsWith("/")) {
+            return false;
+        }
+        String lower = path.toLowerCase();
+        return lower.endsWith(".dex")
+                || lower.endsWith(".apk")
+                || lower.endsWith(".jar")
+                || lower.endsWith(".zip")
+                || lower.endsWith(".vdex");
     }
 
     @ProxyMethod("getProviderInfo")

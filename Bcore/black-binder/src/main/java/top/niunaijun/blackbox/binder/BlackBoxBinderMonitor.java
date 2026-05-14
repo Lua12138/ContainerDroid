@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.binder;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.SystemClock;
@@ -38,6 +39,7 @@ public final class BlackBoxBinderMonitor {
             new EventRingBuffer<>(config.getMaxRingEvents());
     private static EventSink eventSink = NoopEventSink.INSTANCE;
     private static ThreadLocal<RecentBinderTransact> recentJavaTransact = new ThreadLocal<>();
+    private static volatile BinderTransactInterceptor transactInterceptor;
     private static File outputDirectory;
     private static volatile boolean hooksInstalled;
 
@@ -105,6 +107,10 @@ public final class BlackBoxBinderMonitor {
 
     public static boolean isEnabled() {
         return config.isEnabled();
+    }
+
+    public static void setTransactInterceptor(BinderTransactInterceptor interceptor) {
+        transactInterceptor = interceptor;
     }
 
     public static List<String> snapshotEvents() {
@@ -213,6 +219,7 @@ public final class BlackBoxBinderMonitor {
             binderDescriptors = Collections.synchronizedMap(new WeakHashMap<Object, String>());
             ringBuffer = new EventRingBuffer<>(config.getMaxRingEvents());
             recentJavaTransact = new ThreadLocal<>();
+            transactInterceptor = null;
             outputDirectory = null;
             eventSink.close();
             eventSink = NoopEventSink.INSTANCE;
@@ -222,7 +229,7 @@ public final class BlackBoxBinderMonitor {
     static void recordJavaBinderTransactForTesting(String descriptor, int code, int flags,
                                                    int dataSize, boolean replyExpected) {
         recordJavaBinderTransact(descriptor, methodMapping.resolve(descriptor, code), code,
-                flags, dataSize, replyExpected, null, identity);
+                flags, dataSize, replyExpected, null, null, identity);
     }
 
     private static EventSink createSink(Context context, BinderMonitorConfig config) {
@@ -317,7 +324,9 @@ public final class BlackBoxBinderMonitor {
             Pine.hook(method, new MethodHook() {
                 @Override
                 public void beforeCall(Pine.CallFrame callFrame) {
-                    onBinderProxyTransact(callFrame.thisObject, callFrame.args);
+                    if (onBinderProxyTransact(callFrame.thisObject, callFrame.args)) {
+                        callFrame.setResult(Boolean.TRUE);
+                    }
                 }
             });
             return true;
@@ -348,7 +357,7 @@ public final class BlackBoxBinderMonitor {
         }
     }
 
-    private static void onBinderProxyTransact(Object binderProxy, Object[] args) {
+    private static boolean onBinderProxyTransact(Object binderProxy, Object[] args) {
         BinderMonitorConfig localConfig = config;
         VirtualIdentity localIdentity = identity;
         if (!localConfig.isEnabled()
@@ -356,7 +365,7 @@ public final class BlackBoxBinderMonitor {
                 || !localConfig.shouldRecordProcess(localIdentity.getVirtualProcess())
                 || args == null
                 || args.length < 4) {
-            return;
+            return false;
         }
         int code = asInt(args[0]);
         Parcel data = args[1] instanceof Parcel ? (Parcel) args[1] : null;
@@ -364,21 +373,39 @@ public final class BlackBoxBinderMonitor {
         int flags = asInt(args[3]);
         String descriptor = resolveDescriptor(binderProxy, data);
         if (!localConfig.shouldRecordDescriptor(descriptor)) {
-            return;
+            return false;
         }
         int hostTid = Process.myTid();
         if (!localConfig.shouldRecordCode(code)
                 || !localConfig.shouldRecordFlags(flags)
                 || !localConfig.shouldRecordThread(hostTid)) {
-            return;
+            return false;
         }
         int dataSize = safeDataSize(data);
         String method = methodMapping.resolve(descriptor, code);
         if (!localConfig.shouldRecordMethod(method)) {
-            return;
+            return false;
         }
+        String argsSummary = BinderPayloadSummary.summarize(descriptor, method, data, Build.VERSION.SDK_INT);
         recordJavaBinderTransact(descriptor, method, code, flags, dataSize, reply != null,
-                stackOrNull(localConfig, descriptor, method), localIdentity);
+                argsSummary, stackOrNull(localConfig, descriptor, method), localIdentity);
+        return interceptBinderTransact(binderProxy, code, data, reply, flags, descriptor, method, argsSummary);
+    }
+
+    private static boolean interceptBinderTransact(Object binderProxy, int code, Parcel data,
+                                                   Parcel reply, int flags, String descriptor,
+                                                   String method, String argsSummary) {
+        BinderTransactInterceptor interceptor = transactInterceptor;
+        if (interceptor == null) {
+            return false;
+        }
+        try {
+            return interceptor.onTransact(binderProxy, code, data, reply, flags, descriptor, method,
+                    argsSummary);
+        } catch (Throwable e) {
+            Log.w(TAG, "binder transact interceptor failed", e);
+            return false;
+        }
     }
 
     private static void recordExternalBinderTransact(String descriptor, int code, int flags,
@@ -426,8 +453,8 @@ public final class BlackBoxBinderMonitor {
 
     private static void recordJavaBinderTransact(String descriptor, String method, int code,
                                                  int flags, int dataSize,
-                                                 boolean replyExpected, List<String> stack,
-                                                 VirtualIdentity localIdentity) {
+                                                 boolean replyExpected, String argsSummary,
+                                                 List<String> stack, VirtualIdentity localIdentity) {
         long timestampNs = now();
         int hostTid = Process.myTid();
         recentJavaTransact.set(new RecentBinderTransact(
@@ -449,6 +476,7 @@ public final class BlackBoxBinderMonitor {
                 dataSize,
                 replyExpected,
                 SOURCE_TRANSACT,
+                argsSummary,
                 stack));
     }
 
@@ -582,5 +610,10 @@ public final class BlackBoxBinderMonitor {
             this.flags = flags;
             this.dataSize = dataSize;
         }
+    }
+
+    public interface BinderTransactInterceptor {
+        boolean onTransact(Object binderProxy, int code, Parcel data, Parcel reply, int flags,
+                           String descriptor, String method, String argsSummary) throws Throwable;
     }
 }

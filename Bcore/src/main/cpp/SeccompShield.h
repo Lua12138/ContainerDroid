@@ -5,6 +5,9 @@ namespace blackbox {
 namespace seccomp {
 
 void installSeccompShield();
+void installTerminationOnlySeccompShield();
+void installTerminationTrapSeccompShield();
+void setVirtualUid(int virtual_uid);
 
 }
 }

@@ -48,16 +48,29 @@ constexpr time_t kSigsysWatchdogBurstDurationSec = 3;
 constexpr uint64_t kTrapBreadcrumbWindowMs = 3000;
 constexpr size_t kStatusBufferSize = 4096;
 constexpr size_t kMaxTrackedThreads = 64;
+constexpr uint32_t kSeccompReturnSuccess = SECCOMP_RET_ERRNO | 0;
+constexpr uint32_t kSeccompReturnTrap = SECCOMP_RET_TRAP;
 
 static std::atomic<bool> gSeccompInstalled(false);
+static std::atomic<bool> gTerminationOnlySeccompInstalled(false);
+static std::atomic<bool> gTerminationTrapSeccompInstalled(false);
 static std::atomic<bool> gDumperStarted(false);
 static std::atomic<bool> gSigsysWatchdogStarted(false);
 static std::atomic<uint32_t> gVirtualSigsysSeq(0);
+static std::atomic<int> gVirtualUid(-1);
+static std::atomic<int> gKernelUid(-1);
 static std::atomic<pid_t> gLastTracerPid(-1);
 static std::atomic<unsigned long long> gLastSigIgnMask(ULLONG_MAX);
 static std::atomic<unsigned long long> gLastSigCgtMask(ULLONG_MAX);
 static std::atomic<uint32_t> gSigsysCanarySeq(0);
 static std::atomic<uint64_t> gSeccompInstallMonotonicMs(0);
+static std::atomic_flag gRtSigprocmaskBypassLock = ATOMIC_FLAG_INIT;
+struct RtSigprocmaskBypassStorage {
+    sigset_t mask;
+    unsigned long padding;
+};
+static RtSigprocmaskBypassStorage gRtSigprocmaskBypassStorage = {};
+static sigset_t &gRtSigprocmaskBypassSet = gRtSigprocmaskBypassStorage.mask;
 static int gTrapPipe[2] = {-1, -1};
 static pthread_t gDumperThread;
 static pthread_t gSigsysWatchdogThread;
@@ -107,6 +120,11 @@ constexpr int kSysRtSigaction = 134;
 constexpr int kSysKill = 129;
 constexpr int kSysTkill = 130;
 constexpr int kSysTgkill = 131;
+constexpr int kSysRtSigprocmask = __NR_rt_sigprocmask;
+constexpr int kSysGetuid = __NR_getuid;
+constexpr int kSysGeteuid = __NR_geteuid;
+constexpr int kSysGetuid32 = -1;
+constexpr int kSysGeteuid32 = -1;
 #elif defined(__arm__)
 constexpr uint32_t kAuditArch = AUDIT_ARCH_ARM;
 constexpr int kSysExit = 1;
@@ -115,9 +133,26 @@ constexpr int kSysSigaction = 67;
 constexpr int kSysSigprocmask = 126;
 constexpr int kSysKill = 37;
 constexpr int kSysRtSigaction = 174;
+constexpr int kSysRtSigprocmask = __NR_rt_sigprocmask;
+constexpr int kSysGetuid = __NR_getuid;
+constexpr int kSysGeteuid = __NR_geteuid;
+constexpr int kSysGetuid32 = __NR_getuid32;
+constexpr int kSysGeteuid32 = __NR_geteuid32;
 constexpr int kSysTkill = 238;
 constexpr int kSysExitGroup = 248;
 constexpr int kSysTgkill = 268;
+#endif
+
+#ifdef __NR_rt_sigqueueinfo
+constexpr int kSysRtSigqueueinfo = __NR_rt_sigqueueinfo;
+#else
+constexpr int kSysRtSigqueueinfo = -1;
+#endif
+
+#ifdef __NR_rt_tgsigqueueinfo
+constexpr int kSysRtTgsigqueueinfo = __NR_rt_tgsigqueueinfo;
+#else
+constexpr int kSysRtTgsigqueueinfo = -1;
 #endif
 
 struct TrapEvent {
@@ -566,7 +601,9 @@ static bool shouldLogTrapBreadcrumb() {
 
 static bool isProtectedSyscall(int sysno) {
 #if defined(__aarch64__) || defined(__arm__)
-    return sysno == kSysKill || sysno == kSysTkill || sysno == kSysTgkill
+    return sysno == kSysExit || sysno == kSysExitGroup
+           || sysno == kSysKill || sysno == kSysTkill || sysno == kSysTgkill
+           || sysno == kSysRtSigqueueinfo || sysno == kSysRtTgsigqueueinfo
            || sysno == __NR_prctl || sysno == __NR_seccomp;
 #else
     return false;
@@ -626,8 +663,12 @@ static uintptr_t getSyscallArg(const ucontext_t *context, int index) {
     return static_cast<uintptr_t>(context->uc_mcontext.regs[index]);
 }
 
+static void emulateReturn(ucontext_t *context, uintptr_t value) {
+    context->uc_mcontext.regs[0] = value;
+}
+
 static void emulateSuccess(ucontext_t *context) {
-    context->uc_mcontext.regs[0] = 0;
+    emulateReturn(context, 0);
 }
 
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
@@ -678,8 +719,12 @@ static uintptr_t getSyscallArg(const ucontext_t *context, int index) {
     }
 }
 
+static void emulateReturn(ucontext_t *context, uintptr_t value) {
+    context->uc_mcontext.arm_r0 = value;
+}
+
 static void emulateSuccess(ucontext_t *context) {
-    context->uc_mcontext.arm_r0 = 0;
+    emulateReturn(context, 0);
 }
 
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
@@ -708,6 +753,45 @@ static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontex
 
 #endif
 
+static int signalArgumentIndexForSignalDeliverySyscall(int sysno) {
+#if defined(__aarch64__) || defined(__arm__)
+    if (sysno == kSysKill || sysno == kSysTkill || sysno == kSysRtSigqueueinfo) {
+        return 1;
+    }
+    if (sysno == kSysTgkill || sysno == kSysRtTgsigqueueinfo) {
+        return 2;
+    }
+#else
+    (void) sysno;
+#endif
+    return -1;
+}
+
+static bool isSigsysSignalDeliverySyscall(int sysno, const ucontext_t *context) {
+#if defined(__aarch64__) || defined(__arm__)
+    const int signal_index = signalArgumentIndexForSignalDeliverySyscall(sysno);
+    return signal_index >= 0 && static_cast<int>(getSyscallArg(context, signal_index)) == SIGSYS;
+#else
+    (void) sysno;
+    (void) context;
+    return false;
+#endif
+}
+
+static bool isTrappedSigsysCanarySignalSend(int sysno, const ucontext_t *context) {
+#if defined(__aarch64__) || defined(__arm__)
+    return gSigsysCanaryArmed
+           && sysno == kSysTgkill
+           && static_cast<pid_t>(getSyscallArg(context, 0)) == getpid()
+           && static_cast<pid_t>(getSyscallArg(context, 1)) == static_cast<pid_t>(getThreadId())
+           && isSigsysSignalDeliverySyscall(sysno, context);
+#else
+    (void) sysno;
+    (void) context;
+    return false;
+#endif
+}
+
 static void logTrapBreadcrumb(const siginfo_t *info, const ucontext_t *context, int sysno) {
     if (!shouldLogTrapBreadcrumb()) {
         return;
@@ -725,6 +809,22 @@ static void logTrapBreadcrumb(const siginfo_t *info, const ucontext_t *context, 
                         info != nullptr ? info->si_call_addr : nullptr);
 }
 
+static uintptr_t syscallReturnValue(long result) {
+    if (result == -1) {
+        return static_cast<uintptr_t>(-errno);
+    }
+    return static_cast<uintptr_t>(result);
+}
+
+static void lockRtSigprocmaskBypass() {
+    while (gRtSigprocmaskBypassLock.test_and_set(std::memory_order_acquire)) {
+    }
+}
+
+static void unlockRtSigprocmaskBypass() {
+    gRtSigprocmaskBypassLock.clear(std::memory_order_release);
+}
+
 static void forwardVirtualSigsys(int signo, siginfo_t *info, void *context_raw) {
     if (gSigsysForwardDepth != 0) {
         return;
@@ -739,6 +839,13 @@ static void forwardVirtualSigsys(int signo, siginfo_t *info, void *context_raw) 
     }
 
     ++gSigsysForwardDepth;
+    __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                        "non-seccomp SIGSYS forwarding tid=%ld si_code=%d si_errno=%d handler=%p flags=0x%lx",
+                        getThreadId(),
+                        info != nullptr ? info->si_code : 0,
+                        info != nullptr ? info->si_errno : 0,
+                        reinterpret_cast<void *>(handler_ptr),
+                        static_cast<unsigned long>(action.sa_flags));
     if ((action.sa_flags & SA_SIGINFO) != 0 && action.sa_sigaction != nullptr) {
         action.sa_sigaction(signo, info, context_raw);
     } else if (action.sa_handler != nullptr) {
@@ -940,6 +1047,16 @@ static void *sigsysWatchdogMain(void *) {
     }
 }
 
+static bool isSigsysWatchdogDiagnosticsEnabled() {
+    const char *value = getenv("BLACKBOX_SECCOMP_WATCHDOG");
+    return value != nullptr
+           && (strcmp(value, "1") == 0
+               || strcmp(value, "true") == 0
+               || strcmp(value, "TRUE") == 0
+               || strcmp(value, "yes") == 0
+               || strcmp(value, "YES") == 0);
+}
+
 static bool ensureSigsysWatchdogStarted() {
     bool expected = false;
     if (!gSigsysWatchdogStarted.compare_exchange_strong(expected, true)) {
@@ -978,6 +1095,16 @@ static void sigsysHandler(int signo, siginfo_t *info, void *context_raw) {
 
     ucontext_t *context = reinterpret_cast<ucontext_t *>(context_raw);
     int sysno = getSyscallNumber(context);
+
+    if (isTrappedSigsysCanarySignalSend(sysno, context)) {
+        const uint32_t sequence = gSigsysCanarySeq.fetch_add(1, std::memory_order_relaxed) + 1;
+        __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                            "SIGSYS canary trapped seq=%u tid=%ld sysno=%d si_code=%d",
+                            sequence, getThreadId(), sysno, info != nullptr ? info->si_code : 0);
+        emulateSuccess(context);
+        return;
+    }
+
     logTrapBreadcrumb(info, context, sysno);
 
     if (sysno == kSysRtSigaction
@@ -1072,52 +1199,76 @@ static bool installFilter() {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
 #if defined(__arm__)
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysSignal, 0, 3),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysSigaction, 0, 3),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
 #endif
 
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_prctl, 0, 3),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PR_SET_SECCOMP, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
 
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_seccomp, 0, 3),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SECCOMP_SET_MODE_FILTER, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
 
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysKill, 0, 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysKill, 0, 6),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 1, 0),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
 
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTkill, 0, 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTkill, 0, 6),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 1, 0),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
 
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTgkill, 0, 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTgkill, 0, 6),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                      static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 1, 0),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtSigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtTgsigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
 
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     };
@@ -1156,6 +1307,238 @@ static bool installFilter() {
 #else
     __android_log_print(ANDROID_LOG_WARN, kSeccompTag,
                         "seccomp shield is unsupported on this ABI");
+    return false;
+#endif
+}
+
+static bool installTerminationOnlyFilter() {
+#if defined(__aarch64__) || defined(__arm__)
+    struct sock_filter filter[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, static_cast<uint32_t>(offsetof(struct seccomp_data, arch))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kAuditArch, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, static_cast<uint32_t>(offsetof(struct seccomp_data, nr))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysExit, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysExitGroup, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysKill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTkill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTgkill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtSigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtTgsigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+
+    struct sock_fprog program = {};
+    program.len = static_cast<unsigned short>(sizeof(filter) / sizeof(filter[0]));
+    program.filter = filter;
+
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                            "prctl(PR_SET_NO_NEW_PRIVS) for termination-only filter failed: errno=%d (%s)",
+                            errno, strerror(errno));
+        return false;
+    }
+
+    long tsync_result = syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &program);
+    if (tsync_result == 0) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-only seccomp TSYNC filter installed for all current threads");
+        return true;
+    }
+
+    const int tsync_errno = errno;
+    __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                        "termination-only seccomp TSYNC install failed: ret=%ld errno=%d (%s), falling back to prctl",
+                        tsync_result, tsync_errno, strerror(tsync_errno));
+
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                            "termination-only prctl(PR_SET_SECCOMP) fallback failed: errno=%d (%s)",
+                            errno, strerror(errno));
+        return false;
+    }
+
+    __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                        "termination-only seccomp filter installed through prctl fallback on current thread only");
+    return true;
+#else
+    __android_log_print(ANDROID_LOG_WARN, kSeccompTag,
+                        "termination-only seccomp shield is unsupported on this ABI");
+    return false;
+#endif
+}
+
+static bool installTerminationTrapFilter() {
+#if defined(__aarch64__) || defined(__arm__)
+    struct sock_filter filter[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, static_cast<uint32_t>(offsetof(struct seccomp_data, arch))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kAuditArch, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, static_cast<uint32_t>(offsetof(struct seccomp_data, nr))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtSigaction, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+#if defined(__arm__)
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysSignal, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysSigaction, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGSYS, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+#endif
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_prctl, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PR_SET_SECCOMP, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_seccomp, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[0]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SECCOMP_SET_MODE_FILTER, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnSuccess),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysExit, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysExitGroup, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysKill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTkill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysTgkill, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtSigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[1]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kSysRtTgsigqueueinfo, 0, 6),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                     static_cast<uint32_t>(offsetof(struct seccomp_data, args[2]))),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGKILL, 3, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGTERM, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SIGABRT, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, kSeccompReturnTrap),
+
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+
+    struct sock_fprog program = {};
+    program.len = static_cast<unsigned short>(sizeof(filter) / sizeof(filter[0]));
+    program.filter = filter;
+
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                            "termination-trap prctl(PR_SET_NO_NEW_PRIVS) failed: errno=%d (%s)",
+                            errno, strerror(errno));
+        return false;
+    }
+
+    long tsync_result = syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &program);
+    if (tsync_result == 0) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-trap seccomp TSYNC filter installed for all current threads");
+        return true;
+    }
+
+    const int tsync_errno = errno;
+    __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                        "termination-trap seccomp TSYNC install failed: ret=%ld errno=%d (%s), falling back to prctl",
+                        tsync_result, tsync_errno, strerror(tsync_errno));
+
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
+                            "termination-trap prctl(PR_SET_SECCOMP) fallback failed: errno=%d (%s)",
+                            errno, strerror(errno));
+        return false;
+    }
+
+    __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                        "termination-trap seccomp filter installed through prctl fallback on current thread only");
+    return true;
+#else
+    __android_log_print(ANDROID_LOG_WARN, kSeccompTag,
+                        "termination-trap seccomp shield is unsupported on this ABI");
     return false;
 #endif
 }
@@ -1203,6 +1586,10 @@ void installSeccompShield() {
         return;
     }
 
+    if (gKernelUid.load(std::memory_order_relaxed) <= 0) {
+        gKernelUid.store(static_cast<int>(getuid()), std::memory_order_relaxed);
+    }
+
     if (!ensureDumperStarted() || !installSignalHandler() || !installFilter()) {
         gSeccompInstalled.store(false);
         return;
@@ -1210,13 +1597,85 @@ void installSeccompShield() {
     gSeccompInstallMonotonicMs.store(monotonicMs(), std::memory_order_relaxed);
     ensureSignalMaskHooksReady();
 
-    if (!ensureSigsysWatchdogStarted()) {
-        gSeccompInstalled.store(false);
-        return;
+    if (isSigsysWatchdogDiagnosticsEnabled()) {
+        if (!ensureSigsysWatchdogStarted()) {
+            gSeccompInstalled.store(false);
+            return;
+        }
     }
 
     __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
                         "seccomp shield installed");
+}
+
+void installTerminationOnlySeccompShield() {
+    if (gSeccompInstalled.load(std::memory_order_acquire)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-only seccomp skipped because full shield is already installed");
+        return;
+    }
+
+    bool expected = false;
+    if (!gTerminationOnlySeccompInstalled.compare_exchange_strong(expected, true)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-only seccomp shield already installed");
+        return;
+    }
+
+    if (gKernelUid.load(std::memory_order_relaxed) <= 0) {
+        gKernelUid.store(static_cast<int>(getuid()), std::memory_order_relaxed);
+    }
+
+    if (!installTerminationOnlyFilter()) {
+        gTerminationOnlySeccompInstalled.store(false);
+        return;
+    }
+
+    __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                        "termination-only seccomp shield installed");
+}
+
+void installTerminationTrapSeccompShield() {
+    if (gSeccompInstalled.load(std::memory_order_acquire)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-trap seccomp skipped because full shield is already installed");
+        return;
+    }
+    if (gTerminationOnlySeccompInstalled.load(std::memory_order_acquire)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-trap seccomp skipped because termination-only shield is already installed");
+        return;
+    }
+
+    bool expected = false;
+    if (!gTerminationTrapSeccompInstalled.compare_exchange_strong(expected, true)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                            "termination-trap seccomp shield already installed");
+        return;
+    }
+
+    if (gKernelUid.load(std::memory_order_relaxed) <= 0) {
+        gKernelUid.store(static_cast<int>(getuid()), std::memory_order_relaxed);
+    }
+
+    if (!ensureDumperStarted() || !installSignalHandler() || !installTerminationTrapFilter()) {
+        gTerminationTrapSeccompInstalled.store(false);
+        return;
+    }
+    gSeccompInstallMonotonicMs.store(monotonicMs(), std::memory_order_relaxed);
+    ensureSignalMaskHooksReady();
+
+    __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                        "termination-trap seccomp shield installed");
+}
+
+void setVirtualUid(int virtual_uid) {
+    gKernelUid.store(static_cast<int>(getuid()), std::memory_order_relaxed);
+    gVirtualUid.store(virtual_uid, std::memory_order_relaxed);
+    __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
+                        "virtual uid configured virtualUid=%d kernelUid=%d",
+                        virtual_uid,
+                        gKernelUid.load(std::memory_order_relaxed));
 }
 
 } // namespace seccomp

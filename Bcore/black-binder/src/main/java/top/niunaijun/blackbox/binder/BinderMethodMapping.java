@@ -25,7 +25,9 @@ public final class BinderMethodMapping {
             "android.app.INotificationManager$Stub",
             "android.content.IClipboard$Stub",
             "android.os.IUserManager$Stub",
-            "android.app.admin.IDevicePolicyManager$Stub"
+            "android.app.admin.IDevicePolicyManager$Stub",
+            "android.os.IServiceManager$Stub",
+            "android.os.storage.IStorageManager$Stub"
     };
 
     private final Map<String, Map<Integer, String>> mappings = new HashMap<>();
@@ -36,6 +38,8 @@ public final class BinderMethodMapping {
         mapping.register("android.app.IActivityManager", 3, "startActivity");
         mapping.register("android.content.pm.IPackageManager", 1, "checkPermission");
         mapping.register("android.content.pm.IPackageManager", 3, "getPackageInfo");
+        mapping.register("android.os.IServiceManager", 1, "getService");
+        mapping.register("android.os.IServiceManager", 2, "checkService");
         return mapping;
     }
 

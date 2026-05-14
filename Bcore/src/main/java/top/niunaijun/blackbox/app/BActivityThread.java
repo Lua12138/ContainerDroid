@@ -23,6 +23,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Looper;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.StrictMode;
 import android.text.TextUtils;
@@ -75,7 +76,9 @@ import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.frameworks.BXposedManager;
 import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
+import top.niunaijun.blackbox.fake.service.DexDumpProxy;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
+import top.niunaijun.blackbox.fake.service.PackageManagerBinderInterceptor;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
@@ -235,7 +238,7 @@ public class BActivityThread extends IBActivityThread.Stub {
                     mInitialApplication,
                     BRActivityManagerNative.get().getDefault()
             );
-            ContextCompat.fix(context);
+            ContextCompat.fixVirtual(context, serviceInfo.packageName);
             service.onCreate();
             return service;
         } catch (Exception e) {
@@ -274,7 +277,7 @@ public class BActivityThread extends IBActivityThread.Stub {
                     mInitialApplication,
                     BRActivityManagerNative.get().getDefault()
             );
-            ContextCompat.fix(context);
+            ContextCompat.fixVirtual(context, serviceInfo.packageName);
             service.onCreate();
             service.onBind(null);
             return service;
@@ -319,6 +322,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         Object loadedApk = BRContextImpl.get(packageContext).mPackageInfo();
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         // fix applicationInfo
+        resetAppComponentFactory(applicationInfo);
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
@@ -343,9 +347,12 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
 
         NativeCore.init(Build.VERSION.SDK_INT);
-        NativeCore.installSeccompShieldIfNeeded();
+        NativeCore.setVirtualUid(BActivityThread.getBUid());
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
+        ContextCompat.fixVirtual(packageContext, packageName);
+        NativeCore.setNativeTerminationShieldPackage(packageName);
+        new DexDumpProxy().injectHook();
 
         AppBindData bindData = new AppBindData();
         bindData.appInfo = applicationInfo;
@@ -366,6 +373,7 @@ public class BActivityThread extends IBActivityThread.Stub {
                 BlackBoxCore.getContext(),
                 binderMonitorConfig,
                 createBinderMonitorIdentity(packageName, processName));
+        BlackBoxBinderMonitor.setTransactInterceptor(new PackageManagerBinderInterceptor());
         NativeCore.enableBinderMonitor(
                 binderMonitorConfig.isEnabled() && binderMonitorConfig.isRecordNative(),
                 binderMonitorConfig.isEnabled() && binderMonitorConfig.isRecordIoctl());
@@ -377,17 +385,35 @@ public class BActivityThread extends IBActivityThread.Stub {
         }
         Application application;
         try {
+            logApplicationIdentity(packageName, processName, applicationInfo);
+            logContextIdentity("beforeMakeApplication", packageContext, packageName);
             onBeforeCreateApplication(packageName, processName, packageContext);
-            application = BRLoadedApk.get(loadedApk).makeApplication(false, null);
+            logApplicationBoundary("beforeMakeApplication", packageContext, null, loadedApk);
+            application = BRLoadedApk.getWithException(loadedApk).makeApplication(false, null);
+            logApplicationBoundary("afterMakeApplication", packageContext, application, loadedApk);
             mInitialApplication = application;
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(mInitialApplication);
+            logInitialApplicationState("afterSetInitialApplication", mInitialApplication, loadedApk);
             ContextCompat.fix((Context) BRActivityThread.get(BlackBoxCore.mainThread()).getSystemContext());
-            ContextCompat.fix(mInitialApplication);
+            ContextCompat.fixVirtual(mInitialApplication, packageName);
+            NativeCore.disableEarlyProcMapsShim();
+            DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName,
+                    "BActivityThread.afterMakeApplication");
+            logApplicationBoundary("beforeInstallProviders", mInitialApplication, application, loadedApk);
             installProviders(mInitialApplication, bindData.processName, bindData.providers);
+            logApplicationBoundary("afterInstallProviders", mInitialApplication, application, loadedApk);
 
             onBeforeApplicationOnCreate(packageName, processName, application);
+            logApplicationBoundary("beforeApplicationOnCreate", mInitialApplication, application, loadedApk);
             AppInstrumentation.get().callApplicationOnCreate(application);
+            logApplicationBoundary("afterApplicationOnCreate", mInitialApplication, application, loadedApk);
+            mInitialApplication = syncInitialApplicationFromRuntime(mInitialApplication, loadedApk);
+            application = mInitialApplication;
+            ContextCompat.fixVirtual(mInitialApplication, packageName);
+            DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName,
+                    "BActivityThread.afterApplicationOnCreate");
             onAfterApplicationOnCreate(packageName, processName, application);
+            logInitialApplicationState("afterApplicationOnCreate", mInitialApplication, loadedApk);
 
             HookManager.get().checkEnv(HCallbackProxy.class);
         } catch (Exception e) {
@@ -406,6 +432,310 @@ public class BActivityThread extends IBActivityThread.Stub {
         return null;
     }
 
+    public void ensureInitialApplicationState(String stage) {
+        if (mBoundApplication == null || mBoundApplication.info == null) {
+            return;
+        }
+        mInitialApplication = syncInitialApplicationFromRuntime(mInitialApplication, mBoundApplication.info);
+        if (mInitialApplication != null) {
+            String packageName = getAppPackageName();
+            if (packageName != null) {
+                ContextCompat.fixVirtual(mInitialApplication, packageName);
+            }
+        }
+        logInitialApplicationState(stage, mInitialApplication, mBoundApplication.info);
+    }
+
+    private static Application syncInitialApplicationFromRuntime(Application localApplication, Object loadedApk) {
+        Application loadedApkApplication = null;
+        Application threadInitialApplication = null;
+        try {
+            loadedApkApplication = BRLoadedApk.get(loadedApk).mApplication();
+        } catch (Throwable ignored) {
+        }
+        try {
+            threadInitialApplication = BRActivityThread.get(BlackBoxCore.mainThread()).mInitialApplication();
+        } catch (Throwable ignored) {
+        }
+
+        Application syncedApplication = localApplication;
+        if (loadedApkApplication != null && loadedApkApplication != localApplication) {
+            syncedApplication = loadedApkApplication;
+        } else if (threadInitialApplication != null && threadInitialApplication != localApplication) {
+            syncedApplication = threadInitialApplication;
+        } else if (syncedApplication == null && loadedApkApplication != null) {
+            syncedApplication = loadedApkApplication;
+        } else if (syncedApplication == null) {
+            syncedApplication = threadInitialApplication;
+        }
+
+        if (syncedApplication != null) {
+            boolean restoredThreadInitial = false;
+            boolean restoredLoadedApk = false;
+            String threadRestoreError = null;
+            String loadedApkRestoreError = null;
+            if (threadInitialApplication != syncedApplication) {
+                try {
+                    BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(syncedApplication);
+                    restoredThreadInitial = true;
+                } catch (Throwable e) {
+                    threadRestoreError = e.getClass().getName() + ":" + e.getMessage();
+                }
+            }
+            if (loadedApkApplication != syncedApplication) {
+                try {
+                    BRLoadedApk.get(loadedApk)._set_mApplication(syncedApplication);
+                    restoredLoadedApk = true;
+                } catch (Throwable e) {
+                    loadedApkRestoreError = e.getClass().getName() + ":" + e.getMessage();
+                }
+            }
+            if (syncedApplication != localApplication || restoredThreadInitial || restoredLoadedApk
+                    || threadRestoreError != null || loadedApkRestoreError != null) {
+                Slog.i(TAG, "Synced initial application from runtime"
+                        + " previous=" + describeApplication(localApplication)
+                        + " synced=" + describeApplication(syncedApplication)
+                        + " loadedApk=" + describeApplication(loadedApkApplication)
+                        + " threadInitial=" + describeApplication(threadInitialApplication)
+                        + " restoredThreadInitial=" + restoredThreadInitial
+                        + " restoredLoadedApk=" + restoredLoadedApk
+                        + (threadRestoreError == null ? "" : " threadRestoreError=" + threadRestoreError)
+                        + (loadedApkRestoreError == null ? "" : " loadedApkRestoreError=" + loadedApkRestoreError));
+            }
+        } else {
+            Slog.i(TAG, "Synced initial application from runtime"
+                    + " previous=" + describeApplication(localApplication)
+                    + " synced=null"
+                    + " loadedApk=" + describeApplication(loadedApkApplication)
+                    + " threadInitial=" + describeApplication(threadInitialApplication));
+        }
+        return syncedApplication;
+    }
+
+    private static void logApplicationIdentity(String packageName, String processName, ApplicationInfo applicationInfo) {
+        int libcoreUid = -1;
+        String libcoreUidError = null;
+        try {
+            libcoreUid = android.system.Os.getuid();
+        } catch (Throwable e) {
+            libcoreUidError = e.getClass().getName() + ":" + e.getMessage();
+        }
+        int appInfoUid = applicationInfo == null ? -1 : applicationInfo.uid;
+        Slog.i(TAG, "Virtual identity before makeApplication"
+                + " package=" + packageName
+                + " process=" + processName
+                + " pid=" + Process.myPid()
+                + " linuxUid=" + Process.myUid()
+                + " libcoreUid=" + libcoreUid
+                + " hostUid=" + BlackBoxCore.getHostUid()
+                + " appConfigUid=" + BActivityThread.getUid()
+                + " virtualUid=" + BActivityThread.getBUid()
+                + " virtualAppId=" + BActivityThread.getBAppId()
+                + " applicationInfo.uid=" + appInfoUid
+                + " applicationInfoAppId=" + BUserHandle.getAppId(appInfoUid)
+                + (libcoreUidError == null ? "" : " libcoreUidError=" + libcoreUidError));
+    }
+
+    private static void logContextIdentity(String stage, Context context, String expectedPackage) {
+        if (context == null) {
+            Slog.i(TAG, "Package context identity stage=" + stage
+                    + " expectedPackage=" + expectedPackage
+                    + " context=null");
+            return;
+        }
+
+        String packageName;
+        try {
+            packageName = context.getPackageName();
+        } catch (Throwable e) {
+            packageName = "error:" + e.getClass().getName() + ":" + e.getMessage();
+        }
+
+        String opPackageName;
+        try {
+            opPackageName = Reflector.QuietReflector.with(context).method("getOpPackageName").call();
+        } catch (Throwable e) {
+            opPackageName = "error:" + e.getClass().getName() + ":" + e.getMessage();
+        }
+
+        String dataDir;
+        try {
+            File dir = context.getDataDir();
+            dataDir = dir == null ? "null" : dir.getAbsolutePath();
+        } catch (Throwable e) {
+            dataDir = "error:" + e.getClass().getName() + ":" + e.getMessage();
+        }
+
+        String filesDir;
+        try {
+            File dir = context.getFilesDir();
+            filesDir = dir == null ? "null" : dir.getAbsolutePath();
+        } catch (Throwable e) {
+            filesDir = "error:" + e.getClass().getName() + ":" + e.getMessage();
+        }
+
+        String nativeLibraryDir;
+        String sourceDir;
+        String appDataDir;
+        try {
+            nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
+            sourceDir = context.getApplicationInfo().sourceDir;
+            appDataDir = context.getApplicationInfo().dataDir;
+        } catch (Throwable e) {
+            nativeLibraryDir = "error:" + e.getClass().getName() + ":" + e.getMessage();
+            sourceDir = nativeLibraryDir;
+            appDataDir = nativeLibraryDir;
+        }
+
+        String classLoader;
+        try {
+            ClassLoader loader = context.getClassLoader();
+            classLoader = loader == null ? "null" : loader.toString();
+        } catch (Throwable e) {
+            classLoader = "error:" + e.getClass().getName() + ":" + e.getMessage();
+        }
+
+        Slog.i(TAG, "Package context identity"
+                + " stage=" + stage
+                + " expectedPackage=" + expectedPackage
+                + " packageName=" + packageName
+                + " opPackageName=" + opPackageName
+                + " dataDir=" + dataDir
+                + " filesDir=" + filesDir
+                + " appInfoDataDir=" + appDataDir
+                + " nativeLibraryDir=" + nativeLibraryDir
+                + " sourceDir=" + sourceDir
+                + " classLoader=" + classLoader);
+    }
+
+    private static void logInitialApplicationState(String stage, Application localApplication, Object loadedApk) {
+        Application threadInitial = null;
+        Application loadedApkApplication = null;
+        String threadInitialError = null;
+        String loadedApkError = null;
+        try {
+            threadInitial = BRActivityThread.get(BlackBoxCore.mainThread()).mInitialApplication();
+        } catch (Throwable e) {
+            threadInitialError = e.getClass().getName() + ":" + e.getMessage();
+        }
+        try {
+            loadedApkApplication = BRLoadedApk.get(loadedApk).mApplication();
+        } catch (Throwable e) {
+            loadedApkError = e.getClass().getName() + ":" + e.getMessage();
+        }
+        Slog.i(TAG, "ActivityThread initial application state"
+                + " stage=" + stage
+                + " localApplication=" + describeApplication(localApplication)
+                + " threadInitialApplication=" + describeApplication(threadInitial)
+                + " threadInitialSameLocal=" + (threadInitial == localApplication)
+                + " loadedApkApplication=" + describeApplication(loadedApkApplication)
+                + " loadedApkSameLocal=" + (loadedApkApplication == localApplication)
+                + (threadInitialError == null ? "" : " threadInitialError=" + threadInitialError)
+                + (loadedApkError == null ? "" : " loadedApkError=" + loadedApkError));
+    }
+
+    private static String describeApplication(Application application) {
+        if (application == null) {
+            return "null";
+        }
+        return application.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(application));
+    }
+
+    private static void logApplicationBoundary(String stage, Context context, Application application, Object loadedApk) {
+        Slog.i(TAG, "Application lifecycle boundary"
+                + " stage=" + stage
+                + " context=" + describeContext(context)
+                + " application=" + describeApplication(application)
+                + " loadedApkApplication=" + describeApplication(getLoadedApkApplicationQuietly(loadedApk))
+                + " contextClassLoader=" + describeClassLoader(getContextClassLoaderQuietly(context))
+                + " applicationClassLoader=" + describeClassLoader(getApplicationClassLoaderQuietly(application))
+                + " loadedApkClassLoader=" + describeClassLoader(getLoadedApkClassLoaderQuietly(loadedApk))
+                + " threadContextClassLoader=" + describeClassLoader(Thread.currentThread().getContextClassLoader()));
+    }
+
+    private static String describeContext(Context context) {
+        if (context == null) {
+            return "null";
+        }
+        return context.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(context));
+    }
+
+    private static ClassLoader getContextClassLoaderQuietly(Context context) {
+        if (context == null) {
+            return null;
+        }
+        try {
+            return context.getClassLoader();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static ClassLoader getApplicationClassLoaderQuietly(Application application) {
+        if (application == null) {
+            return null;
+        }
+        try {
+            return application.getClassLoader();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static ClassLoader getLoadedApkClassLoaderQuietly(Object loadedApk) {
+        if (loadedApk == null) {
+            return null;
+        }
+        try {
+            return BRLoadedApk.get(loadedApk).getClassLoader();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Application getLoadedApkApplicationQuietly(Object loadedApk) {
+        if (loadedApk == null) {
+            return null;
+        }
+        try {
+            return BRLoadedApk.get(loadedApk).mApplication();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static String describeClassLoader(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(classLoader.getClass().getName())
+                .append('@')
+                .append(Integer.toHexString(System.identityHashCode(classLoader)))
+                .append('[')
+                .append(String.valueOf(classLoader))
+                .append(']');
+        ClassLoader parent = classLoader.getParent();
+        if (parent != null) {
+            builder.append(" parent=")
+                    .append(parent.getClass().getName())
+                    .append('@')
+                    .append(Integer.toHexString(System.identityHashCode(parent)));
+        }
+        return builder.toString();
+    }
+
+    private static void resetAppComponentFactory(ApplicationInfo applicationInfo) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || applicationInfo == null) {
+            return;
+        }
+        String factory = applicationInfo.appComponentFactory;
+        if ("android.support.v4.app.CoreComponentFactory".equals(factory)
+                || "androidx.core.app.CoreComponentFactory".equals(factory)) {
+            applicationInfo.appComponentFactory = null;
+        }
+    }
+
     private void installProviders(Context context, String processName, List<ProviderInfo> provider) {
         long origId = Binder.clearCallingIdentity();
         try {
@@ -415,7 +745,13 @@ public class BActivityThread extends IBActivityThread.Stub {
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
                     }
-                } catch (Throwable ignored) {
+                } catch (Throwable e) {
+                    Slog.e(TAG, "install provider failed"
+                            + " name=" + providerInfo.name
+                            + " authority=" + providerInfo.authority
+                            + " providerProcess=" + providerInfo.processName
+                            + " appProcess=" + processName
+                            + " package=" + providerInfo.packageName, e);
                 }
             }
         } finally {
@@ -429,11 +765,31 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     public static void installProvider(Object mainThread, Context context, ProviderInfo providerInfo, Object holder) throws Throwable {
-        Method installProvider = Reflector.findMethodByFirstName(mainThread.getClass(), "installProvider");
+        Method installProvider = findInstallProviderMethod(mainThread.getClass());
         if (installProvider != null) {
             installProvider.setAccessible(true);
             installProvider.invoke(mainThread, context, holder, providerInfo, false, true, true);
         }
+    }
+
+    private static Method findInstallProviderMethod(Class<?> activityThreadClass) {
+        for (Class<?> clazz = activityThreadClass; clazz != null; clazz = clazz.getSuperclass()) {
+            for (Method installProvider : clazz.getDeclaredMethods()) {
+                if (!"installProvider".equals(installProvider.getName())) {
+                    continue;
+                }
+                Class<?>[] parameterTypes = installProvider.getParameterTypes();
+                if (installProvider.getParameterTypes().length == 6
+                        && Context.class.isAssignableFrom(parameterTypes[0])
+                        && ProviderInfo.class.isAssignableFrom(parameterTypes[2])
+                        && boolean.class == parameterTypes[3]
+                        && boolean.class == parameterTypes[4]
+                        && boolean.class == parameterTypes[5]) {
+                    return installProvider;
+                }
+            }
+        }
+        return null;
     }
 
     public void loadXposed(Context context) {

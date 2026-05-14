@@ -15,6 +15,7 @@ public final class BinderEvent implements JsonSerializable {
     private final int flags;
     private final int dataSize;
     private final boolean replyExpected;
+    private final String argsSummary;
     private final String source;
     private final int handle;
     private final String driverCommand;
@@ -22,8 +23,8 @@ public final class BinderEvent implements JsonSerializable {
 
     private BinderEvent(long timestampNs, int hostPid, int hostTid, VirtualIdentity identity,
                         String descriptor, String method, int code, int flags, int dataSize,
-                        boolean replyExpected, String source, int handle, String driverCommand,
-                        List<String> callStack) {
+                        boolean replyExpected, String argsSummary, String source, int handle,
+                        String driverCommand, List<String> callStack) {
         this.timestampNs = timestampNs;
         this.hostPid = hostPid;
         this.hostTid = hostTid;
@@ -34,6 +35,7 @@ public final class BinderEvent implements JsonSerializable {
         this.flags = flags;
         this.dataSize = dataSize;
         this.replyExpected = replyExpected;
+        this.argsSummary = argsSummary;
         this.source = source;
         this.handle = handle;
         this.driverCommand = driverCommand;
@@ -45,7 +47,15 @@ public final class BinderEvent implements JsonSerializable {
                                        int code, int flags, int dataSize, boolean replyExpected,
                                        String source, List<String> callStack) {
         return new BinderEvent(timestampNs, hostPid, hostTid, identity, descriptor, method, code,
-                flags, dataSize, replyExpected, source, -1, null, callStack);
+                flags, dataSize, replyExpected, null, source, -1, null, callStack);
+    }
+
+    public static BinderEvent transact(long timestampNs, int hostPid, int hostTid,
+                                       VirtualIdentity identity, String descriptor, String method,
+                                       int code, int flags, int dataSize, boolean replyExpected,
+                                       String source, String argsSummary, List<String> callStack) {
+        return new BinderEvent(timestampNs, hostPid, hostTid, identity, descriptor, method, code,
+                flags, dataSize, replyExpected, argsSummary, source, -1, null, callStack);
     }
 
     public static BinderEvent transact(long timestampNs, int hostPid, int hostTid,
@@ -54,7 +64,7 @@ public final class BinderEvent implements JsonSerializable {
                                        String source, int handle, String driverCommand,
                                        List<String> callStack) {
         return new BinderEvent(timestampNs, hostPid, hostTid, identity, descriptor, method, code,
-                flags, dataSize, replyExpected, source, handle, driverCommand, callStack);
+                flags, dataSize, replyExpected, null, source, handle, driverCommand, callStack);
     }
 
     public String getDescriptor() {
@@ -90,6 +100,9 @@ public final class BinderEvent implements JsonSerializable {
         JsonUtils.appendBoolean(builder, "oneway", (flags & FLAG_ONEWAY) != 0);
         JsonUtils.appendInt(builder, "data_size", dataSize);
         JsonUtils.appendBoolean(builder, "reply_expected", replyExpected);
+        if (argsSummary != null) {
+            JsonUtils.appendString(builder, "args_summary", argsSummary);
+        }
         JsonUtils.appendString(builder, "source", source);
         if (handle >= 0) {
             JsonUtils.appendInt(builder, "handle", handle);

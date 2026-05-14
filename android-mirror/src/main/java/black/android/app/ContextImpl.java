@@ -4,6 +4,8 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
 
+import java.io.File;
+
 import top.niunaijun.blackreflection.annotation.BClassName;
 import top.niunaijun.blackreflection.annotation.BField;
 import top.niunaijun.blackreflection.annotation.BMethod;
@@ -16,6 +18,24 @@ public interface ContextImpl {
 
     @BField
     ContentResolver mContentResolver();
+
+    @BField
+    File mDataDir();
+
+    @BField
+    File mFilesDir();
+
+    @BField
+    File mPreferencesDir();
+
+    @BField
+    File mNoBackupFilesDir();
+
+    @BField
+    File mCacheDir();
+
+    @BField
+    File mCodeCacheDir();
 
     @BField
     Object mPackageInfo();

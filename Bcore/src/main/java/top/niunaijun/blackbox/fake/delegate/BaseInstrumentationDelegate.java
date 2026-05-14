@@ -23,9 +23,11 @@ import android.view.MotionEvent;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.Reflector;
 
 public class BaseInstrumentationDelegate extends Instrumentation {
+    private static final String TAG = "BaseInstrumentationDelegate";
 
     protected Instrumentation mBaseInstrumentation;
 
@@ -47,6 +49,7 @@ public class BaseInstrumentationDelegate extends Instrumentation {
 
     @Override
     public boolean onException(Object obj, Throwable e) {
+        Slog.e(TAG, "Instrumentation onException", e);
         return mBaseInstrumentation.onException(obj, e);
     }
 

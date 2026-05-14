@@ -5,6 +5,8 @@
 #include "IO.h"
 #include "Log.h"
 
+#include <limits.h>
+
 jmethodID getAbsolutePathMethodId;
 
 list<IO::RelocateInfo> relocate_rule;
@@ -45,6 +47,76 @@ const char *IO::redirectPath(const char *__path) {
         }
     }
     return __path;
+}
+
+const char *reverseRedirectPathWithAlias(const char *__path, const char *relocatePath, const char *targetPath) {
+    if (__path == nullptr || relocatePath == nullptr || targetPath == nullptr) {
+        return nullptr;
+    }
+    if (strstr(__path, relocatePath)) {
+        return replace(__path, relocatePath, targetPath);
+    }
+
+    static const char *kDataUserPrefix = "/data/user/0/";
+    static const char *kDataDataPrefix = "/data/data/";
+    const char *fromPrefix = nullptr;
+    const char *toPrefix = nullptr;
+    if (strncmp(relocatePath, kDataUserPrefix, strlen(kDataUserPrefix)) == 0) {
+        fromPrefix = kDataUserPrefix;
+        toPrefix = kDataDataPrefix;
+    } else if (strncmp(relocatePath, kDataDataPrefix, strlen(kDataDataPrefix)) == 0) {
+        fromPrefix = kDataDataPrefix;
+        toPrefix = kDataUserPrefix;
+    }
+    if (fromPrefix == nullptr || toPrefix == nullptr) {
+        return nullptr;
+    }
+
+    char alias[PATH_MAX];
+    int written = snprintf(alias, sizeof(alias), "%s%s", toPrefix, relocatePath + strlen(fromPrefix));
+    if (written <= 0 || static_cast<size_t>(written) >= sizeof(alias)) {
+        return nullptr;
+    }
+    if (strstr(__path, alias)) {
+        return replace(__path, alias, targetPath);
+    }
+    return nullptr;
+}
+
+const char *IO::reverseRedirectPath(const char *__path) {
+    if (__path == nullptr) {
+        return __path;
+    }
+    list<IO::RelocateInfo>::iterator iterator;
+    for (iterator = relocate_rule.begin(); iterator != relocate_rule.end(); ++iterator) {
+        IO::RelocateInfo info = *iterator;
+        if (info.relocatePath == nullptr || info.targetPath == nullptr) {
+            continue;
+        }
+        const char *reversed = reverseRedirectPathWithAlias(__path, info.relocatePath, info.targetPath);
+        if (reversed != nullptr) {
+            return reversed;
+        }
+    }
+    return __path;
+}
+
+jstring IO::reverseRedirectPath(JNIEnv *env, jstring path) {
+    if (env == nullptr || path == nullptr) {
+        return path;
+    }
+    const char *pathC = env->GetStringUTFChars(path, JNI_FALSE);
+    if (pathC == nullptr) {
+        return path;
+    }
+    const char *reversed = reverseRedirectPath(pathC);
+    jstring result = path;
+    if (reversed != pathC) {
+        result = env->NewStringUTF(reversed);
+        free((void *) reversed);
+    }
+    env->ReleaseStringUTFChars(path, pathC);
+    return result;
 }
 
 jstring IO::redirectPath(JNIEnv *env, jstring path) {

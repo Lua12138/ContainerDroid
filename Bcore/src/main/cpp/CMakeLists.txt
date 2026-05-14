@@ -14,7 +14,14 @@ include_directories(./)
 
 aux_source_directory(./ SRC1)
 aux_source_directory(Utils SRC2)
-aux_source_directory(Hook SRC3)
+set(SRC3
+        Hook/BaseHook.cpp
+        Hook/BinderHook.cpp
+        Hook/JniDiagnosticsHook.cpp
+        Hook/NativeFileHook.cpp
+        Hook/RuntimeHook.cpp
+        Hook/UnixFileSystemHook.cpp
+        Hook/VMClassLoaderHook.cpp)
 aux_source_directory(JniHook SRC4)
 add_compile_options(-w)
 add_library( # Sets the name of the library.
@@ -24,6 +31,7 @@ add_library( # Sets the name of the library.
         # Provides a relative path to your source file(s).
         BoxCore.cpp
         SeccompShield.cpp
+        RawSyscallTerminationProbe.cpp
         ${SRC1}
         ${SRC2}
         ${SRC3}
