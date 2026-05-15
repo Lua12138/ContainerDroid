@@ -9,6 +9,7 @@ import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -18,6 +19,8 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.util.Log;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -352,12 +355,10 @@ public class ActivityStack {
             assert resources != null;
             typedArray = resources.newTheme().obtainStyledAttributes(id, BRRstyleable.get().Window());
             boolean windowIsTranslucent = typedArray.getBoolean(BRRstyleable.get().Window_windowIsTranslucent(), false);
-            if (windowIsTranslucent) {
-                shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.TransparentProxyActivity(vpid)));
-            } else {
-                shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
-            }
-            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent);
+            String proxyActivity = resolveProxyActivityClass(vpid, windowIsTranslucent, activityInfo);
+            shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), proxyActivity));
+            Slog.d(TAG, activityInfo + ", windowIsTranslucent: " + windowIsTranslucent
+                    + ", proxyActivity: " + proxyActivity);
         } catch (Throwable e) {
             e.printStackTrace();
             shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyActivity(vpid)));
@@ -368,6 +369,51 @@ public class ActivityStack {
         }
         ProxyActivityRecord.saveStub(shadow, intent, target.mActivityInfo, target.mActivityRecord, target.mUserId);
         return shadow;
+    }
+
+    private String resolveProxyActivityClass(int vpid, boolean windowIsTranslucent, ActivityInfo activityInfo) {
+        if (!windowIsTranslucent && shouldUseLegacyAspectProxy(activityInfo)) {
+            return ProxyManifest.getLegacyAspectProxyActivity(vpid);
+        }
+        if (windowIsTranslucent) {
+            return ProxyManifest.TransparentProxyActivity(vpid);
+        }
+        return ProxyManifest.getProxyActivity(vpid);
+    }
+
+    private boolean shouldUseLegacyAspectProxy(ActivityInfo activityInfo) {
+        if (activityInfo == null || activityInfo.applicationInfo == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return false;
+        }
+        if (getActivityMaxAspectRatio(activityInfo) > 0) {
+            return true;
+        }
+        return activityInfo.applicationInfo.targetSdkVersion < Build.VERSION_CODES.O;
+    }
+
+    private float getActivityMaxAspectRatio(ActivityInfo activityInfo) {
+        try {
+            Field field = ActivityInfo.class.getDeclaredField("maxAspectRatio");
+            field.setAccessible(true);
+            Object value = field.get(activityInfo);
+            if (value instanceof Number) {
+                return ((Number) value).floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            Method method = ActivityInfo.class.getDeclaredMethod("getMaxAspectRatio");
+            method.setAccessible(true);
+            Object value = method.invoke(activityInfo);
+            if (value instanceof Number) {
+                return ((Number) value).floatValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
     }
 
     private void finishAllActivity(int userId) {

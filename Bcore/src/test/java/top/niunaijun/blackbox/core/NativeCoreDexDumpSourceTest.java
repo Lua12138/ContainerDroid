@@ -39,6 +39,26 @@ public class NativeCoreDexDumpSourceTest {
     }
 
     @Test
+    public void inMemoryDexDumpIsBoundedToAvoidMainThreadAnrAndStorageExhaustion() throws Exception {
+        String source = readSource("Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java");
+        String memoryDump = sliceBetween(source,
+                "public static void dumpDexByteBuffers",
+                "private static Set<String> collectDexSourcePaths");
+
+        assertTrue("ByteBuffer dump should cap per-call buffer count",
+                source.contains("MAX_MEMORY_DEX_BUFFERS_PER_CALL")
+                        && memoryDump.contains("dumpedBuffers >= MAX_MEMORY_DEX_BUFFERS_PER_CALL"));
+        assertTrue("ByteBuffer dump should cap each individual buffer before allocating/copying it",
+                source.contains("MAX_MEMORY_DEX_BUFFER_BYTES")
+                        && memoryDump.contains("size > MAX_MEMORY_DEX_BUFFER_BYTES"));
+        assertTrue("ByteBuffer dump should cap total bytes written by one call",
+                source.contains("MAX_MEMORY_DEX_BYTES_PER_CALL")
+                        && memoryDump.contains("dumpedBytes + size > MAX_MEMORY_DEX_BYTES_PER_CALL"));
+        assertTrue("ByteBuffer dump should only account bytes after a successful write",
+                memoryDump.indexOf("FileUtils.writeToFile") < memoryDump.indexOf("dumpedBytes += size"));
+    }
+
+    @Test
     public void bindApplicationInvokesDumpDexAfterApplicationClassLoaderIsAvailable() throws Exception {
         String source = readSource("Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
 
@@ -57,5 +77,13 @@ public class NativeCoreDexDumpSourceTest {
             }
         }
         throw new AssertionError(rootRelativePath + " not found from " + current);
+    }
+
+    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
+        int start = source.indexOf(startNeedle);
+        int end = source.indexOf(endNeedle, start + startNeedle.length());
+        assertTrue(startNeedle + " should exist", start >= 0);
+        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
+        return source.substring(start, end);
     }
 }

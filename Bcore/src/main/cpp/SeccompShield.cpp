@@ -175,6 +175,10 @@ struct TrapEvent {
 
 static TrapEvent gTrapEvents[kMaxTrapEvents];
 
+static bool isProcessExitSyscall(int sysno) {
+    return sysno == kSysExit || sysno == kSysExitGroup;
+}
+
 static int futexWait(std::atomic<uint32_t> *addr, uint32_t expected) {
     return static_cast<int>(syscall(__NR_futex,
                                     reinterpret_cast<uint32_t *>(addr),
@@ -671,6 +675,14 @@ static void emulateSuccess(ucontext_t *context) {
     emulateReturn(context, 0);
 }
 
+static void emulateBlockedProcessExitReturn(ucontext_t *context) {
+    emulateReturn(context, 0);
+    uintptr_t lr = static_cast<uintptr_t>(context->uc_mcontext.regs[30]);
+    if (lr != 0) {
+        context->uc_mcontext.pc = lr;
+    }
+}
+
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
     const mcontext_t &mc = context->uc_mcontext;
     event->pid = getpid();
@@ -725,6 +737,14 @@ static void emulateReturn(ucontext_t *context, uintptr_t value) {
 
 static void emulateSuccess(ucontext_t *context) {
     emulateReturn(context, 0);
+}
+
+static void emulateBlockedProcessExitReturn(ucontext_t *context) {
+    emulateReturn(context, 0);
+    uintptr_t lr = static_cast<uintptr_t>(context->uc_mcontext.arm_lr);
+    if (lr != 0) {
+        context->uc_mcontext.arm_pc = static_cast<unsigned long>(lr);
+    }
 }
 
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
@@ -1131,7 +1151,11 @@ static void sigsysHandler(int signo, siginfo_t *info, void *context_raw) {
     uint32_t slot_index = UINT32_MAX;
     TrapEvent *event = acquireTrapEvent(&slot_index);
     if (event == nullptr || gTrapPipe[1] < 0) {
-        emulateSuccess(context);
+        if (isProcessExitSyscall(sysno)) {
+            emulateBlockedProcessExitReturn(context);
+        } else {
+            emulateSuccess(context);
+        }
         return;
     }
 
@@ -1141,7 +1165,11 @@ static void sigsysHandler(int signo, siginfo_t *info, void *context_raw) {
 
     if (writeExact(gTrapPipe[1], &slot_index, sizeof(slot_index)) != sizeof(slot_index)) {
         resetTrapEvent(event);
-        emulateSuccess(context);
+        if (isProcessExitSyscall(sysno)) {
+            emulateBlockedProcessExitReturn(context);
+        } else {
+            emulateSuccess(context);
+        }
         return;
     }
 
@@ -1161,7 +1189,11 @@ static void sigsysHandler(int signo, siginfo_t *info, void *context_raw) {
         break;
     }
 
-    emulateSuccess(context);
+    if (isProcessExitSyscall(sysno)) {
+        emulateBlockedProcessExitReturn(context);
+    } else {
+        emulateSuccess(context);
+    }
     if (event->state.load() == kSlotDone) {
         resetTrapEvent(event);
     }

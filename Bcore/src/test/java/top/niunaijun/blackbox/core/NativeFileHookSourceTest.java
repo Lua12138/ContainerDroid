@@ -139,6 +139,34 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void nativeSyscallWrapperReadsOnlyKnownArgumentCountsBeforeDispatch() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String syscallWrapper = sliceBetween(source,
+                "extern \"C\" long syscall(long number, ...)",
+                "extern \"C\" void *dlopen(");
+
+        assertTrue("variadic syscall wrapper should compute the ABI argument count from the syscall number before va_arg reads",
+                source.contains("int syscallArgumentCount(long number)")
+                        && source.contains("takeSyscallArgsForNumber(number, va_args, args)"));
+        assertFalse("variadic syscall wrapper must not blindly read six arguments for every syscall",
+                syscallWrapper.contains("takeSyscallArgs(va_args, args)"));
+        assertTrue("zero-argument identity syscalls should not consume missing variadic arguments",
+                source.contains("case __NR_getuid:")
+                        && source.contains("return 0;"));
+        assertTrue("open/openat should avoid reading an absent mode argument unless creation flags require it",
+                source.contains("takeOpenSyscallArgs")
+                        && source.contains("takeOpenAtSyscallArgs")
+                        && source.contains("openFlagsRequireMode"));
+        assertTrue("handled fixed-width file and process syscalls should retain their required argument counts",
+                source.contains("case __NR_readlinkat:")
+                        && source.contains("return 4;")
+                        && source.contains("case __NR_statx:")
+                        && source.contains("return 5;"));
+    }
+
+    @Test
     public void fortifiedOpenWrappersDoNotCallTheirOwnFortifyEntryPoints() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -257,7 +285,10 @@ public class NativeFileHookSourceTest {
         String readlinkat = sliceBetween(source,
                 "extern \"C\" ssize_t readlinkat(",
                 "extern \"C\" ssize_t __readlinkat_chk(");
-        String syscallReadlinkat = sliceBetween(source,
+        String syscallWrapper = sliceBetween(source,
+                "extern \"C\" long syscall(long number, ...)",
+                "extern \"C\" void *dlopen(");
+        String syscallReadlinkat = sliceBetween(syscallWrapper,
                 "case __NR_readlinkat:",
                 "default:");
 
@@ -291,6 +322,8 @@ public class NativeFileHookSourceTest {
         assertTrue("Raw syscall hook should cover direct statfs/statfs64 calls from native protectors",
                 source.contains("case __NR_statfs:")
                         && source.contains("case __NR_statfs64:"));
+        assertTrue("Android 32-bit SYS_statfs64 has path, size, and result-buffer arguments; dropping the third argument returns EFAULT",
+                source.contains("case __NR_statfs64:\n            return 3;"));
         assertTrue("Native filesystem metadata diagnostics should be visible for app-data paths",
                 source.contains("logStatPath(\"statfs\"")
                         && source.contains("logStatPath(\"syscall.statfs64\""));
@@ -926,6 +959,10 @@ public class NativeFileHookSourceTest {
                 ioSource.contains("\"/data/user/0/\"")
                         && ioSource.contains("\"/data/data/\"")
                         && ioSource.contains("reverseRedirectPathWithAlias"));
+        assertTrue("IO::replace must initialize the allocated output by allocation size, not strlen(uninitialized malloc memory)",
+                ioSource.contains("memset(result, 0, result_len)"));
+        assertFalse("IO::replace must not call strlen(result) before result is initialized",
+                ioSource.contains("memset(result, 0, strlen(result))"));
     }
 
     @Test
@@ -1468,6 +1505,24 @@ public class NativeFileHookSourceTest {
         assertTrue("tgkill() shielding should block signals whose thread-group target is the original sandbox pid",
                 source.contains("tgid == gNativeTerminationShieldRootPid")
                         && source.contains("tgid == getpid()"));
+    }
+
+    @Test
+    public void nativeTerminationBlockingEmitsBacktraceWithoutRequiringProbeProperty() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String blocked = sliceBetween(source,
+                "void logNativeTerminationBlocked(",
+                "void logProcessProbe(");
+
+        assertTrue("blocked self-termination should emit a bounded native backtrace even when non-blocking probe diagnostics are disabled",
+                source.contains("void dumpBlockedNativeTerminationFrames")
+                        && blocked.contains("dumpBlockedNativeTerminationFrames(api);"));
+        assertTrue("blocked backtrace logs should include IDA-friendly map offsets",
+                source.contains("native termination blocked frame")
+                        && source.contains("pcOff=0x%lx")
+                        && source.contains("pcMap=%s"));
     }
 
     @Test

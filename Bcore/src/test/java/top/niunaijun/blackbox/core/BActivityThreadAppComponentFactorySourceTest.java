@@ -26,6 +26,9 @@ public class BActivityThreadAppComponentFactorySourceTest {
                 compatReset > applicationInfo && compatReset < makeApplication);
         assertTrue("reset helper should clear ApplicationInfo.appComponentFactory",
                 source.contains("applicationInfo.appComponentFactory = null"));
+        assertTrue("reset helper should log the generic factory compatibility rewrite so behavior changes are auditable",
+                source.contains("reset AppComponentFactory")
+                        && source.contains("appComponentFactory"));
     }
 
     @Test

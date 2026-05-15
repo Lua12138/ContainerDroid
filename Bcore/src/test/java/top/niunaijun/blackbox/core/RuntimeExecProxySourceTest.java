@@ -243,6 +243,34 @@ public class RuntimeExecProxySourceTest {
                 source.contains("com.bestv") || source.contains("BestV"));
     }
 
+    @Test
+    public void broadRuntimeExecTracingIsExplicitButSanitizersRemainDefault() throws Exception {
+        String source = readSource(
+                "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/RuntimeExecProxy.java");
+        String runtimeBeforeCall = sliceBetween(source,
+                "public void beforeCall(Pine.CallFrame callFrame) {",
+                "public void afterCall(Pine.CallFrame callFrame) {");
+        String processBuilderBeforeCall = sliceBetween(source,
+                "private void hookProcessBuilderStart",
+                "public void afterCall(Pine.CallFrame callFrame) {");
+
+        assertTrue("broad before/after exec telemetry should be gated by explicit env/java/debug properties",
+                source.contains("EXEC_TRACE_ENV")
+                        && source.contains("BLACKBOX_EXEC_TRACE")
+                        && source.contains("EXEC_TRACE_JAVA_PROPERTY")
+                        && source.contains("blackbox.exec_trace")
+                        && source.contains("EXEC_TRACE_PROPERTY")
+                        && source.contains("debug.blackbox.exec_trace")
+                        && source.contains("shouldTraceSandboxExec()"));
+        assertFalse("sanitized Runtime.exec handling must not return before checking id/getprop/proc probes when broad tracing is disabled",
+                runtimeBeforeCall.contains("if (!shouldTraceSandboxExec()) {\n                        return;\n                    }"));
+        assertFalse("sanitized ProcessBuilder handling must not return before checking id/getprop/proc probes when broad tracing is disabled",
+                processBuilderBeforeCall.contains("if (!shouldTraceSandboxExec()) {\n                        return;\n                    }"));
+        assertTrue("unhandled commands should only be logged when broad exec tracing is enabled",
+                runtimeBeforeCall.contains("if (shouldTraceSandboxExec())")
+                        && processBuilderBeforeCall.contains("if (shouldTraceSandboxExec())"));
+    }
+
     private static String sliceBetween(String source, String startNeedle, String endNeedle) {
         int start = source.indexOf(startNeedle);
         int end = source.indexOf(endNeedle, start + startNeedle.length());

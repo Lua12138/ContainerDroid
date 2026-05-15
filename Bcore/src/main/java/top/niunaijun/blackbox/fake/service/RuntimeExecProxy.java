@@ -36,6 +36,9 @@ public class RuntimeExecProxy implements IInjectHook {
     private static final String STATIC_PROCESS_TRACE_ENV = "BLACKBOX_STATIC_PROCESS_TRACE";
     private static final String STATIC_PROCESS_TRACE_JAVA_PROPERTY = "blackbox.static_process_trace";
     private static final String STATIC_PROCESS_TRACE_PROPERTY = "debug.blackbox.static_process_trace";
+    private static final String EXEC_TRACE_ENV = "BLACKBOX_EXEC_TRACE";
+    private static final String EXEC_TRACE_JAVA_PROPERTY = "blackbox.exec_trace";
+    private static final String EXEC_TRACE_PROPERTY = "debug.blackbox.exec_trace";
     private static final String[] DEFAULT_GETPROP_KEYS = new String[] {
             "ro.product.stb.stbid",
             "ro.ril.oem.wifimac",
@@ -288,11 +291,9 @@ public class RuntimeExecProxy implements IInjectHook {
             Pine.hook(method, new MethodHook() {
                 @Override
                 public void beforeCall(Pine.CallFrame callFrame) {
-                    if (!shouldTraceSandboxExec()) {
-                        return;
-                    }
+                    boolean trace = shouldTraceSandboxExec();
                     String command = formatCommand(callFrame.args);
-                    String stack = stackTraceSummary();
+                    String stack = trace ? stackTraceSummary() : "disabled";
                     if (shouldReturnSanitizedId(callFrame.args)) {
                         Slog.d(TAG, STAGE_SANITIZED_ID_LOG + " command=" + command + " stack=" + stack);
                         recordRuntimeExec(owner.getName(), methodName, command, stack, "sanitized_id");
@@ -317,9 +318,11 @@ public class RuntimeExecProxy implements IInjectHook {
                         callFrame.setResult(new StaticProcess(buildSanitizedGetprop()));
                         return;
                     }
-                    Slog.d(TAG, "before " + owner.getName() + "." + methodName
-                            + " command=" + command + " stack=" + stack);
-                    recordRuntimeExec(owner.getName(), methodName, command, stack, "before");
+                    if (shouldTraceSandboxExec()) {
+                        Slog.d(TAG, "before " + owner.getName() + "." + methodName
+                                + " command=" + command + " stack=" + stack);
+                        recordRuntimeExec(owner.getName(), methodName, command, stack, "before");
+                    }
                 }
 
                 @Override
@@ -356,12 +359,10 @@ public class RuntimeExecProxy implements IInjectHook {
             Pine.hook(method, new MethodHook() {
                 @Override
                 public void beforeCall(Pine.CallFrame callFrame) {
-                    if (!shouldTraceSandboxExec()) {
-                        return;
-                    }
+                    boolean trace = shouldTraceSandboxExec();
                     List<String> commandList = processBuilderCommand(callFrame.thisObject);
                     String command = formatCommand(commandList);
-                    String stack = stackTraceSummary();
+                    String stack = trace ? stackTraceSummary() : "disabled";
                     if (shouldReturnSanitizedId(commandList)) {
                         Slog.d(TAG, STAGE_SANITIZED_ID_LOG
                                 + " method=ProcessBuilder.start command=" + command + " stack=" + stack);
@@ -394,9 +395,11 @@ public class RuntimeExecProxy implements IInjectHook {
                         callFrame.setResult(new StaticProcess(buildSanitizedGetprop()));
                         return;
                     }
-                    Slog.d(TAG, "before " + owner.getName() + ".start"
-                            + " command=" + command + " stack=" + stack);
-                    recordRuntimeExec(owner.getName(), "start", command, stack, "before");
+                    if (shouldTraceSandboxExec()) {
+                        Slog.d(TAG, "before " + owner.getName() + ".start"
+                                + " command=" + command + " stack=" + stack);
+                        recordRuntimeExec(owner.getName(), "start", command, stack, "before");
+                    }
                 }
 
                 @Override
@@ -428,7 +431,9 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean shouldTraceSandboxExec() {
-        return true;
+        return isTruthy(System.getenv(EXEC_TRACE_ENV))
+                || isTruthy(System.getProperty(EXEC_TRACE_JAVA_PROPERTY))
+                || isTruthy(SystemPropertiesCompat.get(EXEC_TRACE_PROPERTY));
     }
 
     private static String formatCommand(Object[] args) {

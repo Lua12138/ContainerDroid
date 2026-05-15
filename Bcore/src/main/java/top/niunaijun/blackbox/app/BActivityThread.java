@@ -732,6 +732,8 @@ public class BActivityThread extends IBActivityThread.Stub {
         String factory = applicationInfo.appComponentFactory;
         if ("android.support.v4.app.CoreComponentFactory".equals(factory)
                 || "androidx.core.app.CoreComponentFactory".equals(factory)) {
+            Slog.i(TAG, "reset AppComponentFactory appComponentFactory=" + factory
+                    + " package=" + applicationInfo.packageName);
             applicationInfo.appComponentFactory = null;
         }
     }

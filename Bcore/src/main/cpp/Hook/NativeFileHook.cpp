@@ -962,6 +962,23 @@ void dumpRecentNativeFileProbesForTermination(const char *api, pid_t termination
     }
 }
 
+size_t captureNativeBacktrace(void **frames, size_t max_frames);
+
+void dumpBlockedNativeTerminationFrames(const char *api) {
+    void *frames[kTerminationProbeMaxFrames] = {};
+    size_t frame_count = captureNativeBacktrace(frames, kTerminationProbeMaxFrames);
+    for (size_t i = 0; i < frame_count; i++) {
+        CallerLocation frame_location = {};
+        resolveCallerLocation(frames[i], &frame_location);
+        ALOGD("native termination blocked frame api=%s index=%zu pc=%p pcOff=0x%lx pcMap=%s",
+              api == nullptr ? "unknown" : api,
+              i,
+              frames[i],
+              static_cast<unsigned long>(frame_location.offset),
+              frame_location.path);
+    }
+}
+
 void logNativeTerminationBlocked(const char *api, long target, int signal, int status, void *caller) {
     CallerLocation caller_location = {};
     resolveCallerLocation(caller, &caller_location);
@@ -974,6 +991,7 @@ void logNativeTerminationBlocked(const char *api, long target, int signal, int s
           caller,
           static_cast<unsigned long>(caller_location.offset),
           caller_location.path);
+    dumpBlockedNativeTerminationFrames(api);
     dumpRecentNativeFileProbesForTermination(api, rawThreadId());
 }
 
@@ -2774,9 +2792,180 @@ int rawDirectOpenAt(int dirfd, const char *pathname, int flags, mode_t mode) {
 #endif
 }
 
-void takeSyscallArgs(va_list args, long values[6]) {
-    for (int i = 0; i < 6; i++) {
+bool openFlagsRequireMode(long flags) {
+    if ((flags & O_CREAT) != 0) {
+        return true;
+    }
+#ifdef O_TMPFILE
+    return (flags & O_TMPFILE) == O_TMPFILE;
+#else
+    return false;
+#endif
+}
+
+int syscallArgumentCount(long number) {
+    switch (number) {
+#ifdef __NR_getuid
+        case __NR_getuid:
+            return 0;
+#endif
+#if defined(__NR_getuid32) && (!defined(__NR_getuid) || __NR_getuid32 != __NR_getuid)
+        case __NR_getuid32:
+            return 0;
+#endif
+#ifdef __NR_geteuid
+        case __NR_geteuid:
+            return 0;
+#endif
+#if defined(__NR_geteuid32) && (!defined(__NR_geteuid) || __NR_geteuid32 != __NR_geteuid)
+        case __NR_geteuid32:
+            return 0;
+#endif
+#ifdef __NR_getgid
+        case __NR_getgid:
+            return 0;
+#endif
+#if defined(__NR_getgid32) && (!defined(__NR_getgid) || __NR_getgid32 != __NR_getgid)
+        case __NR_getgid32:
+            return 0;
+#endif
+#ifdef __NR_getegid
+        case __NR_getegid:
+            return 0;
+#endif
+#if defined(__NR_getegid32) && (!defined(__NR_getegid) || __NR_getegid32 != __NR_getegid)
+        case __NR_getegid32:
+            return 0;
+#endif
+#ifdef __NR_getgroups
+        case __NR_getgroups:
+            return 2;
+#endif
+#if defined(__NR_getgroups32) && (!defined(__NR_getgroups) || __NR_getgroups32 != __NR_getgroups)
+        case __NR_getgroups32:
+            return 2;
+#endif
+#ifdef __NR_exit
+        case __NR_exit:
+            return 1;
+#endif
+#ifdef __NR_exit_group
+        case __NR_exit_group:
+            return 1;
+#endif
+#ifdef __NR_kill
+        case __NR_kill:
+            return 2;
+#endif
+#ifdef __NR_tkill
+        case __NR_tkill:
+            return 2;
+#endif
+#ifdef __NR_tgkill
+        case __NR_tgkill:
+            return 3;
+#endif
+#ifdef __NR_fork
+        case __NR_fork:
+            return 0;
+#endif
+#ifdef __NR_vfork
+        case __NR_vfork:
+            return 0;
+#endif
+#ifdef __NR_clone
+        case __NR_clone:
+            return 5;
+#endif
+#ifdef __NR_execve
+        case __NR_execve:
+            return 3;
+#endif
+#ifdef __NR_mkdir
+        case __NR_mkdir:
+            return 2;
+#endif
+#ifdef __NR_mkdirat
+        case __NR_mkdirat:
+            return 3;
+#endif
+#ifdef __NR_faccessat
+        case __NR_faccessat:
+            return 4;
+#endif
+#ifdef __NR_newfstatat
+        case __NR_newfstatat:
+            return 4;
+#endif
+#if defined(__NR_fstatat64) && (!defined(__NR_newfstatat) || __NR_fstatat64 != __NR_newfstatat)
+        case __NR_fstatat64:
+            return 4;
+#endif
+#ifdef __NR_statx
+        case __NR_statx:
+            return 5;
+#endif
+#ifdef __NR_statfs
+        case __NR_statfs:
+            return 2;
+#endif
+#ifdef __NR_statfs64
+        case __NR_statfs64:
+            return 3;
+#endif
+#ifdef __NR_readlinkat
+        case __NR_readlinkat:
+            return 4;
+#endif
+        default:
+            return 6;
+    }
+}
+
+void takeFixedSyscallArgs(va_list args, long values[6], int count) {
+    if (count < 0) {
+        count = 0;
+    }
+    if (count > 6) {
+        count = 6;
+    }
+    for (int i = 0; i < count; i++) {
         values[i] = va_arg(args, long);
+    }
+}
+
+void takeOpenSyscallArgs(va_list args, long values[6]) {
+    values[0] = va_arg(args, long);
+    values[1] = va_arg(args, long);
+    if (openFlagsRequireMode(values[1])) {
+        values[2] = va_arg(args, long);
+    }
+}
+
+void takeOpenAtSyscallArgs(va_list args, long values[6]) {
+    values[0] = va_arg(args, long);
+    values[1] = va_arg(args, long);
+    values[2] = va_arg(args, long);
+    if (openFlagsRequireMode(values[2])) {
+        values[3] = va_arg(args, long);
+    }
+}
+
+void takeSyscallArgsForNumber(long number, va_list args, long values[6]) {
+    switch (number) {
+#ifdef __NR_open
+        case __NR_open:
+            takeOpenSyscallArgs(args, values);
+            return;
+#endif
+#ifdef __NR_openat
+        case __NR_openat:
+            takeOpenAtSyscallArgs(args, values);
+            return;
+#endif
+        default:
+            takeFixedSyscallArgs(args, values, syscallArgumentCount(number));
+            return;
     }
 }
 
@@ -4610,7 +4799,7 @@ extern "C" long syscall(long number, ...) {
     long args[6] = {};
     va_list va_args;
     va_start(va_args, number);
-    takeSyscallArgs(va_args, args);
+    takeSyscallArgsForNumber(number, va_args, args);
     va_end(va_args);
 
     SyscallFn fn = resolveSymbol(&gOrigSyscall, "syscall");

@@ -115,6 +115,23 @@ public class RawSyscallTerminationProbeSourceTest {
     }
 
     @Test
+    public void rawExitSyscallTrapDoesNotFallThroughIntoBionicFatalTrap() throws Exception {
+        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String handler = sliceBetween(source,
+                "static void sigtrapHandler",
+                "static int protFromPerms");
+
+        assertTrue("blocked raw exit/exit_group should be distinguished from kill-style syscalls",
+                source.contains("isProcessExitSyscall")
+                        && handler.contains("isProcessExitSyscall(sysno)"));
+        assertTrue("blocked raw exit should resume at LR instead of the instruction after svc, because bionic exit stubs place a fatal trap there",
+                source.contains("resumeBlockedProcessExit")
+                        && source.contains("mc.arm_pc = static_cast<unsigned long>(mc.arm_lr)"));
+        assertTrue("kill/tgkill should still resume after the patched SVC instruction",
+                handler.contains("entry->address + entry->size"));
+    }
+
+    @Test
     public void rawSyscallProbeRedirectsDirectArmSvcFileSyscallsThroughIoCore() throws Exception {
         String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 

@@ -17,7 +17,9 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -43,8 +45,14 @@ public class NativeCore {
     public static final String TAG = "NativeCore";
     private static final SeccompInstallGate SECCOMP_INSTALL_GATE = new SeccompInstallGate();
     private static final AtomicInteger DEX_DUMP_SEQUENCE = new AtomicInteger();
+    private static final int DEX_COOKIE_MAX_FAILED_ATTEMPTS = 3;
+    private static final int MAX_MEMORY_DEX_BUFFERS_PER_CALL = 16;
+    private static final int MAX_MEMORY_DEX_BUFFER_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_MEMORY_DEX_BYTES_PER_CALL = 32 * 1024 * 1024;
     private static final Set<String> DUMPED_DEX_KEYS =
             Collections.synchronizedSet(new LinkedHashSet<String>());
+    private static final Map<String, AtomicInteger> DEX_COOKIE_FAILURE_COUNTS =
+            new ConcurrentHashMap<>();
 
     static {
         new File("");
@@ -165,7 +173,14 @@ public class NativeCore {
         FileUtils.mkdirs(outputDir);
 
         String safeTag = sanitizeDumpName(sourceTag == null ? "memory" : sourceTag);
+        int dumpedBuffers = 0;
+        long dumpedBytes = 0;
         for (int i = 0; i < buffers.length; i++) {
+            if (dumpedBuffers >= MAX_MEMORY_DEX_BUFFERS_PER_CALL) {
+                Slog.w(TAG, "dumpDex memory skipped remaining buffers source=" + sourceTag
+                        + " limit=" + MAX_MEMORY_DEX_BUFFERS_PER_CALL);
+                break;
+            }
             ByteBuffer buffer = buffers[i];
             if (buffer == null) {
                 continue;
@@ -175,6 +190,18 @@ public class NativeCore {
                 int size = duplicate.remaining();
                 if (size <= 0) {
                     continue;
+                }
+                if (size > MAX_MEMORY_DEX_BUFFER_BYTES) {
+                    Slog.w(TAG, "dumpDex memory skipped oversized buffer source=" + sourceTag
+                            + " index=" + i + " bytes=" + size
+                            + " limit=" + MAX_MEMORY_DEX_BUFFER_BYTES);
+                    continue;
+                }
+                if (dumpedBytes + size > MAX_MEMORY_DEX_BYTES_PER_CALL) {
+                    Slog.w(TAG, "dumpDex memory skipped remaining buffers source=" + sourceTag
+                            + " totalBytes=" + dumpedBytes + " nextBytes=" + size
+                            + " limit=" + MAX_MEMORY_DEX_BYTES_PER_CALL);
+                    break;
                 }
                 byte[] bytes = new byte[size];
                 duplicate.get(bytes);
@@ -187,6 +214,8 @@ public class NativeCore {
                 String name = safeTag + "_" + i + "_" + digest.substring(0, 12) + extension;
                 File out = new File(outputDir, buildDexDumpName(DEX_DUMP_SEQUENCE.getAndIncrement(), name));
                 FileUtils.writeToFile(new ByteArrayInputStream(bytes), out);
+                dumpedBytes += size;
+                dumpedBuffers++;
                 Slog.i(TAG, "dumpDex memory source=" + sourceTag + " index=" + i
                         + " bytes=" + size + " out=" + out.getAbsolutePath());
             } catch (Throwable e) {
@@ -341,16 +370,36 @@ public class NativeCore {
             return;
         }
         String key = "cookie:" + Long.toHexString(cookie);
-        if (!DUMPED_DEX_KEYS.add(key)) {
+        if (DUMPED_DEX_KEYS.contains(key) || shouldSkipDexCookieAfterFailures(key)) {
             return;
         }
         try {
             if (dumpDexCookieNative(cookie, outputDir.getAbsolutePath())) {
+                DUMPED_DEX_KEYS.add(key);
+                DEX_COOKIE_FAILURE_COUNTS.remove(key);
                 Slog.i(TAG, "dumpDex cookie=0x" + Long.toHexString(cookie)
                         + " out=" + outputDir.getAbsolutePath());
+            } else {
+                recordDexCookieFailure(key);
             }
         } catch (Throwable e) {
+            recordDexCookieFailure(key);
             Slog.e(TAG, "dumpDex cookie failed: 0x" + Long.toHexString(cookie), e);
+        }
+    }
+
+    private static boolean shouldSkipDexCookieAfterFailures(String key) {
+        AtomicInteger failures = DEX_COOKIE_FAILURE_COUNTS.get(key);
+        return failures != null && failures.get() >= DEX_COOKIE_MAX_FAILED_ATTEMPTS;
+    }
+
+    private static void recordDexCookieFailure(String key) {
+        int failures = DEX_COOKIE_FAILURE_COUNTS
+                .computeIfAbsent(key, ignored -> new AtomicInteger())
+                .incrementAndGet();
+        if (failures >= DEX_COOKIE_MAX_FAILED_ATTEMPTS) {
+            Slog.w(TAG, "dumpDex cookie retry limit reached key=" + key
+                    + " attempts=" + failures);
         }
     }
 

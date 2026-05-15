@@ -40,6 +40,9 @@ public class FileMetadataProxySourceTest {
                         && source.contains("isProcCmdlineFile")
                         && source.contains("callFrame.setResult(false)"));
         assertTrue("File.length(/proc/*/cmdline) should expose procfs zero-length metadata",
+                source.contains("isProcCmdlinePath")
+                        && source.contains("/blackbox/proc/"));
+        assertTrue("File.length for proc metadata should return zero",
                 source.contains("callFrame.setResult(0L)"));
     }
 

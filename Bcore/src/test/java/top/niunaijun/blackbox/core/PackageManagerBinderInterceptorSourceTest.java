@@ -24,7 +24,8 @@ public class PackageManagerBinderInterceptorSourceTest {
         assertTrue(source.contains("BActivityThread.getBUid()"));
         assertTrue(source.contains("reply.writeNoException()"));
         assertTrue(source.contains("writeToParcel(reply, 0)"));
-        assertTrue(source.contains("reply.setDataPosition(0)"));
+        assertTrue("This interceptor writes directly into the caller-provided reply Parcel from a BinderProxy.transact hook; reset is required before the generated IPackageManager proxy reads readException()/payload",
+                countOccurrences(source, "reply.setDataPosition(0)") >= 3);
         assertTrue(source.contains("BlackBoxBinderMonitor.recordProxyCall"));
         assertTrue(source.contains("describePackageInfo(packageInfo)"));
         assertTrue(source.contains("signatureHash"));
@@ -64,5 +65,15 @@ public class PackageManagerBinderInterceptorSourceTest {
             }
         }
         throw new AssertionError(relativePath + " not found from " + current);
+    }
+
+    private static int countOccurrences(String source, String pattern) {
+        int count = 0;
+        int index = 0;
+        while ((index = source.indexOf(pattern, index)) >= 0) {
+            count++;
+            index += pattern.length();
+        }
+        return count;
     }
 }

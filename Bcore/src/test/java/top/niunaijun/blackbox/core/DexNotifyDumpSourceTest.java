@@ -206,9 +206,17 @@ public class DexNotifyDumpSourceTest {
                 source.contains("public static void dumpDexFile(DexFile dexFile, String packageName, String sourceTag)")
                         && source.contains("DexFileCompat.getCookies(dexFile)")
                         && source.contains("dumpDexCookie(cookie, outputDir)"));
-        assertTrue("Dex cookie dumps should be deduplicated before native memory probing",
-                source.contains("\"cookie:\" + Long.toHexString(cookie)")
-                        && source.contains("DUMPED_DEX_KEYS.add(key)"));
+        String cookieDump = sliceBetween(source,
+                "private static void dumpDexCookie",
+                "private static String buildDexDumpName");
+        int nativeDump = cookieDump.indexOf("dumpDexCookieNative(cookie, outputDir.getAbsolutePath())");
+        int successDedupe = cookieDump.indexOf("DUMPED_DEX_KEYS.add(key)", nativeDump);
+        assertTrue("Dex cookie address dedupe should happen only after native dump success so transient failures can retry",
+                nativeDump >= 0 && successDedupe > nativeDump);
+        assertTrue("Dex cookie native failures should be bounded by a retry counter instead of poisoning the dumped-key set forever",
+                source.contains("DEX_COOKIE_MAX_FAILED_ATTEMPTS")
+                        && source.contains("DEX_COOKIE_FAILURE_COUNTS")
+                        && cookieDump.contains("recordDexCookieFailure(key)"));
         assertFalse("dump path handling must not reintroduce broad process memory scanning",
                 source.contains("/proc/self/mem") || source.contains("dumpProcessDex"));
     }

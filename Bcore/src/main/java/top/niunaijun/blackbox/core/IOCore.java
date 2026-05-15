@@ -8,7 +8,11 @@ import android.os.Environment;
 import android.os.Process;
 import android.text.TextUtils;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -40,6 +44,9 @@ public class IOCore {
     private static final TrieTree mTrieTree = new TrieTree();
     private static final TrieTree sBlackTree = new TrieTree();
     private final Map<String, String> mRedirectMap = new LinkedHashMap<>();
+    private static final ThreadLocal<Boolean> sRefreshingProcMaps = new ThreadLocal<>();
+    private static final long PROC_MAPS_REFRESH_INTERVAL_MS = 60000L;
+    private static volatile long sLastProcMapsRefreshMs = 0L;
 
     private static final Map<String, Map<String, String>> sCachePackageRedirect = new HashMap<>();
 
@@ -70,6 +77,10 @@ public class IOCore {
     public String redirectPath(String path) {
         if (TextUtils.isEmpty(path))
             return path;
+        String procMapsPath = redirectProcMapsPath(path);
+        if (!TextUtils.isEmpty(procMapsPath)) {
+            return procMapsPath;
+        }
         if (path.contains("/blackbox/")) {
             return path;
         }
@@ -83,6 +94,145 @@ public class IOCore {
             path = path.replace(key, Objects.requireNonNull(mRedirectMap.get(key)));
 
         return path;
+    }
+
+    private String redirectProcMapsPath(String path) {
+        if (!isSelfProcMapsPath(path)) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(sRefreshingProcMaps.get())) {
+            return path;
+        }
+        File procMaps = ensureProcMapsFile();
+        if (procMaps != null && procMaps.isFile() && procMaps.length() > 0) {
+            return procMaps.getAbsolutePath();
+        }
+        return null;
+    }
+
+    private boolean isSelfProcMapsPath(String path) {
+        if ("/proc/self/maps".equals(path)) {
+            return true;
+        }
+        if (path.equals("/proc/" + Process.myPid() + "/maps")) {
+            return true;
+        }
+        int appPid = BActivityThread.getAppPid();
+        return appPid > 0 && path.equals("/proc/" + appPid + "/maps");
+    }
+
+    private File ensureProcMapsFile() {
+        int appPid = BActivityThread.getAppPid();
+        if (appPid <= 0) {
+            appPid = Process.myPid();
+        }
+        File procDir = BEnvironment.getProcDir(appPid);
+        File maps = new File(procDir, "maps");
+        long now = System.currentTimeMillis();
+        if (maps.isFile() && maps.length() > 0 && now - sLastProcMapsRefreshMs < PROC_MAPS_REFRESH_INTERVAL_MS) {
+            return maps;
+        }
+        sRefreshingProcMaps.set(Boolean.TRUE);
+        try {
+            if (writeSanitizedProcMapsFile(maps, BActivityThread.getAppPackageName())) {
+                sLastProcMapsRefreshMs = now;
+            }
+        } finally {
+            sRefreshingProcMaps.remove();
+        }
+        return maps;
+    }
+
+    private boolean writeSanitizedProcMapsFile(File maps, String packageName) {
+        File parent = maps.getParentFile();
+        if (parent != null && !parent.exists()) {
+            FileUtils.mkdirs(parent);
+        }
+        boolean wroteAny = false;
+        if (maps.exists()) {
+            maps.setWritable(true, true);
+        }
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/self/maps"));
+             BufferedWriter writer = new BufferedWriter(new FileWriter(maps, false))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (shouldHideProcMapsLine(line)) {
+                    continue;
+                }
+                String sanitized = sanitizeProcMapsLine(line, packageName);
+                if (shouldHideProcMapsLine(sanitized)) {
+                    continue;
+                }
+                writer.write(sanitized);
+                writer.newLine();
+                wroteAny = true;
+            }
+        } catch (IOException ignored) {
+            return false;
+        }
+        maps.setReadable(true, false);
+        maps.setWritable(false, false);
+        return wroteAny;
+    }
+
+    private String sanitizeProcMapsLine(String line, String packageName) {
+        String sanitized = replaceBlackBoxDataUserRoots(line);
+        if (!TextUtils.isEmpty(packageName)) {
+            sanitized = sanitized.replace("top.niunaijun.blackbox", packageName);
+        }
+        sanitized = sanitized.replace("/blackbox/data/user/", "/data/user/");
+        sanitized = sanitized.replace("/blackbox/", "/data/");
+        return sanitized;
+    }
+
+    private String replaceBlackBoxDataUserRoots(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return value;
+        }
+        final String marker = "/blackbox/data/user/";
+        final String dataData = "/data/data/";
+        final String publicRoot = "/data/user/";
+        String result = value;
+        int pos = result.indexOf(marker);
+        while (pos >= 0) {
+            int prefix = result.lastIndexOf(dataData, pos);
+            int replaceStart = prefix >= 0 ? prefix : pos;
+            int replaceEnd = pos + marker.length();
+            result = result.substring(0, replaceStart) + publicRoot + result.substring(replaceEnd);
+            pos = result.indexOf(marker, replaceStart + publicRoot.length());
+        }
+        return result;
+    }
+
+    private boolean shouldHideProcMapsLine(String line) {
+        if (TextUtils.isEmpty(line)) {
+            return false;
+        }
+        if (isWritableExecutableProcMapsLine(line)) {
+            return true;
+        }
+        if (line.contains("/blackbox/data/user/")) {
+            return false;
+        }
+        return line.contains("top.niunaijun.blackbox")
+                || line.contains("libblackbox")
+                || line.contains("libblackhook")
+                || line.contains("libblackdex")
+                || line.contains("libpine")
+                || line.contains("[anon:pine codes]");
+    }
+
+    private boolean isWritableExecutableProcMapsLine(String line) {
+        String trimmed = line.trim();
+        if (trimmed.length() == 0) {
+            return false;
+        }
+        String[] parts = trimmed.split("\\s+", 3);
+        if (parts.length < 2) {
+            return false;
+        }
+        String perms = parts[1];
+        return perms.indexOf('w') >= 0 && perms.indexOf('x') >= 0;
     }
 
     public File redirectPath(File path) {

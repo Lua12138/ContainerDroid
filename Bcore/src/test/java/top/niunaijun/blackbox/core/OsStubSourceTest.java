@@ -47,16 +47,19 @@ public class OsStubSourceTest {
                 source.contains("Class.forName(\"android.system.StructIfaddrs\")")
                         && source.contains("Array.newInstance")
                         && source.contains("getDeclaredConstructor(String.class, int.class, InetAddress.class, InetAddress.class, InetAddress.class, byte[].class)"));
-        assertTrue("safe enumeration should use physical Wi-Fi sysfs/properties and skip unusable placeholder data",
-                source.contains("PROPERTY_WIFI_INTERFACE_KEYS")
-                        && source.contains("PROPERTY_WIFI_MAC_KEYS")
-                        && source.contains("readSysfsHardwareAddress")
-                        && source.contains("isWifiIdentityInterface")
-                        && source.contains("DEFAULT_ANDROID_MAC_BYTES")
-                        && source.contains("if (hardwareAddress == null)")
-                        && source.contains("continue;"));
-        assertTrue("Wi-Fi MAC properties must not synthesize Ethernet when eth0 sysfs is absent",
-                source.contains("if (!isWifiIdentityInterface(name))"));
+        assertTrue("safe enumeration should include core Android interfaces even when sysfs details are hidden from app UIDs",
+                source.contains("isExistingNetworkInterface")
+                        && source.contains("appVisibleHardwareAddress")
+                        && source.contains("shouldExposeSyntheticInterface")
+                        && source.contains("CORE_NETWORK_INTERFACE_CANDIDATES")
+                        && source.contains("new byte[0]"));
+        assertTrue("Android R+ MAC privacy should be the model: app-visible getifaddrs hardware addresses stay empty/inaccessible",
+                source.contains("NetworkInterface.getHardwareAddress()")
+                        && source.contains("non-system apps")
+                        && source.contains("empty"));
+        assertTrue("loopback should be modeled as an interface but must not receive a synthetic hardware address",
+                source.contains("\"lo\"")
+                        && source.contains("NETWORK_INTERFACE_CANDIDATES"));
         assertTrue("OsStub network modeling must not hardcode the target package",
                 !source.contains("com.bestv"));
     }

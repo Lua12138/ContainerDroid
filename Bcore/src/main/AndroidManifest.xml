@@ -787,6 +787,457 @@
             android:taskAffinity="top.niunaijun.blackbox.task_affinity"
             android:theme="@style/BTheme" />
 
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P0"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p0"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P1"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p1"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P2"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p2"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P3"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p3"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P4"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p4"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P5"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p5"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P6"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p6"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P7"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p7"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P8"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p8"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P9"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p9"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P10"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p10"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P11"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p11"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P12"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p12"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P13"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p13"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P14"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p14"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P15"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p15"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P16"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p16"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P17"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p17"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P18"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p18"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P19"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p19"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P20"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p20"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P21"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p21"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P22"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p22"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P23"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p23"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P24"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p24"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P25"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p25"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P26"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p26"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P27"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p27"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P28"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p28"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P29"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p29"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P30"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p30"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P31"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p31"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P32"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p32"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P33"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p33"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P34"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p34"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P35"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p35"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P36"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p36"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P37"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p37"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P38"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p38"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P39"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p39"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P40"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p40"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P41"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p41"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P42"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p42"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P43"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p43"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P44"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p44"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P45"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p45"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P46"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p46"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P47"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p47"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P48"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p48"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+        <activity
+            android:name=".proxy.LegacyAspectProxyActivity$P49"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale"
+            android:exported="true"
+            android:maxAspectRatio="1.86"
+            android:process=":p49"
+            android:resizeableActivity="false"
+            android:taskAffinity="top.niunaijun.blackbox.task_affinity"
+            android:theme="@style/BTheme" />
+
 
         <activity
             android:name=".proxy.TransparentProxyActivity$P0"

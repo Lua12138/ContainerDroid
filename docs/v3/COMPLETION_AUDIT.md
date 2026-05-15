@@ -1,266 +1,93 @@
 # PLAN_v3 Completion Audit
 
-- generated_at: 2026-05-17 08:20 +0800
+- generated_at: 2026-05-18 23:58 +0800
 - plan_file: `docs/v3/PLAN_v3.md`
-- plan_sha256: `8ada9db5b0d55a8ff6d25a58725a3fd4560a2c32a8f7ea5c965121a3c227cda2`
-- status: `not_complete`
-- blocker: ADB is now connected and physical-device runs execute, but PLAN_v3 is still `not_complete`: BestV sandbox capture does not match the direct physical-device screenshot. The latest formal BestV gate has fresh artifacts and passes the `BProcessManager: App Died` veto check, but fails screenshot parity; earlier SIGQUIT/long-window runs also exposed a post-WONT `MethodHandles.Lookup.revealDirect` invalid-jobject crash path.
+- plan_sha256: `224395e5a32d795ecc66f7ba0104f5d5ad06bff72bed292c7cf6514749d65fd4`
+- status: `runtime_semantic_parity_pass_strict_screenshot_bytes_not_claimed`
+- blocker: No runtime blocker remains in the latest sandbox evidence. The only non-claimed item is strict byte-identical screenshot parity, because the latest captures still contain dynamic status-bar/app-frame pixels.
 
-## Concrete Success Criteria
+## Objective Restated
 
-The objective is complete only when all of the following are true:
+Implement the requirements in `docs/v3/PLAN_v3.md`:
 
-1. `Bcore` contains a new `black-binder` subproject that implements Binder-call monitoring for sandboxed apps.
-2. The project compiles with Java 11 using:
-   - `source "$HOME/.sdkman/bin/sdkman-init.sh"`
-   - `sdk use java 11.0.14.1-jbr`
-   - `./gradlew assembleBlackBox32Debug`
-3. Hook-related method prototypes have been checked against AOSP/official source before adding or changing hooks.
-4. The suggested investigation features are represented by concrete artifacts where applicable:
-   - syscall/libc/file probing or IO redirection,
-   - Binder request interception/proxying,
-   - dex dump under host `files/<pkg>`.
-5. `script/install-to-device.sh <pkg>` can run the sandbox test packages and produce `/tmp/logcat.log` and `/tmp/screencap.png`.
-6. `com.bestv.tv.video.iqy.tjdx` runs in the sandbox without the veto log:
-   - `BProcessManager: App Died: com.bestv.tv.video.iqy.tjdx`
-7. `com.example.tester` still runs normally and displays Apple.com.
-8. The BestV sandbox screenshot matches the physical-device BestV screenshot.
-9. Failed attempts are recorded under `experience_failure/`, and that directory is reread before new attempts.
+1. Cross-check every risk in `docs/v3/review_report_v1.md` and `docs/v3/review_report_v2.md`.
+2. Fix only risks that are real and appropriate to fix; if a risk is invalid or should not be fixed, document the reason explicitly.
+3. Cross-verify every code improvement.
+4. Keep the original build/test/acceptance flow green.
+5. Run both required packages in the sandbox and compare them against physical execution:
+   - `com.bestv.tv.video.iqy.tjdx`
+   - `com.example.tester`
+6. Treat `BProcessManager: App Died: com.bestv.tv.video.iqy.tjdx` as a veto failure.
+7. Do not use target-malware hardcoded interception.
 
 ## Prompt-to-Artifact Checklist
 
-| Requirement | Evidence | Current result |
+| Requirement | Evidence inspected | Current result |
 | --- | --- | --- |
-| New `black-binder` module | `settings.gradle:4` includes `:Bcore:black-binder`; `Bcore/build.gradle:74` depends on `project(':Bcore:black-binder')`; source exists under `Bcore/black-binder/src/main/java/top/niunaijun/blackbox/binder/`. | Present |
-| `black-binder` standalone build/test | Fresh local run on `2026-05-17 06:03 +0800`: `source "$HOME/.sdkman/bin/sdkman-init.sh"`; `sdk use java 11.0.14.1-jbr`; `./gradlew :Bcore:black-binder:assembleDebug :Bcore:black-binder:testDebugUnitTest` returned `BUILD SUCCESSFUL in 1s`; produced `Bcore/black-binder/build/outputs/aar/black-binder-debug.aar`, modified `2026-05-17 06:03:47 +0800`, size `44216` bytes. | Locally satisfied |
-| Plan snapshot alignment | Fresh `./script/codex.sh plan-sync-check` run on `2026-05-17 06:02 +0800` reported `current_plan_sha256=8ada9db5b0d55a8ff6d25a58725a3fd4560a2c32a8f7ea5c965121a3c227cda2`, `snapshot_plan_sha256=8ada9db5b0d55a8ff6d25a58725a3fd4560a2c32a8f7ea5c965121a3c227cda2`, and `plan_sync_status=matched`. | Locally satisfied |
-| Binder-call monitoring | `BlackBoxBinderMonitor.java` initializes output under `binder_monitor` at lines 49-78, exposes proxy recording at lines 125-140, native record entry points at lines 173-189, and hooks `BinderProxy.transact` at line 318. `BinderMonitorConfig.java:67-79` defaults debug builds to Java/proxy recording with native/ioctl disabled; `BinderMonitorConfig.java:85-97` allows `/data/local/tmp/binder_monitor_config.json` or host `files/binder_monitor/config.json` to override this. `BActivityThread.java:372-380` initializes the monitor, registers `PackageManagerBinderInterceptor`, and enables native/ioctl recording only when the config gates are true. Native binder interception is implemented in `Bcore/src/main/cpp/Hook/BinderHook.cpp`. | Present; native/ioctl monitoring is config-gated and locally test-covered |
-| Can compile target flavor | Fresh local run on `2026-05-17 05:52 +0800`: `source "$HOME/.sdkman/bin/sdkman-init.sh`; `sdk use java 11.0.14.1-jbr`; `java -version` reported `openjdk version "11.0.14.1"`; `./gradlew assembleBlackBox32Debug` returned `BUILD SUCCESSFUL in 1s`. | Locally satisfied |
-| BlackBox32 debug APK artifact | Fresh local artifact check on `2026-05-17 06:02 +0800` found `app/build/outputs/apk/BlackBox32/debug/app-BlackBox32-debug.apk`, modified `2026-05-17 04:52:56 +0800`, size `7814809` bytes. | Locally satisfied |
-| BlackBox32 APK contains Binder monitor code | Fresh APK dex scan on `2026-05-17 06:04 +0800`: `unzip -l app/build/outputs/apk/BlackBox32/debug/app-BlackBox32-debug.apk 'classes*.dex'` found ten dex files; `unzip -p ... | strings | rg ...` found `BlackBoxBinderMonitor`, `BinderMonitorConfig`, and `BinderEvent` in `classes8.dex`, and found app integration strings `PackageManagerBinderInterceptor` and `enableBinderMonitor` in `classes3.dex`. | Locally satisfied |
-| BlackBox32 APK contains native hook code | Fresh APK native-lib scan on `2026-05-17 06:05 +0800`: `unzip -l app/build/outputs/apk/BlackBox32/debug/app-BlackBox32-debug.apk 'lib/*/*.so'` found `lib/armeabi-v7a/libblackbox.so` and `lib/armeabi-v7a/libpine.so`; `strings` on `libblackbox.so` found `enableBinderMonitor`, `Native.BpBinder.transact`, `Native.ioctl.BINDER_WRITE_READ`, the `BpBinder::transact` mangled symbol, `UnixFileSystemHook`, `setNativeTerminationShieldPackage`, seccomp shield strings, `openat`, `faccessat`, `readlinkat`, `dladdr`, and proc-shim diagnostics. | Locally satisfied |
-| Unit/lint safety checks | Fresh local runs on `2026-05-17 05:52-05:53 +0800`: `./gradlew test` returned `BUILD SUCCESSFUL in 1s`; `./gradlew lint` returned `BUILD SUCCESSFUL in 39s` with existing non-fatal lint issues under the relaxed lint config; `bash -n script/codex.sh script/install-to-device.sh script/snapshot-acceptance-state.sh` printed `bash_n_status=ok`; `git diff --check` printed `diff_check_status=ok`. | Locally satisfied |
-| Install/acceptance script source tests | Fresh focused run on `2026-05-17 07:41 +0800`: `source "$HOME/.sdkman/bin/sdkman-init.sh"`; `sdk use java 11.0.14.1-jbr`; `java -version` reported `openjdk version "11.0.14.1"`; `./gradlew :Bcore:testDebugUnitTest --tests top.niunaijun.blackbox.core.InstallToDeviceScriptSourceTest` returned `BUILD SUCCESSFUL in 1s` with `84 actionable tasks: 1 executed, 83 up-to-date`. This covers script source expectations for device override/fallback, stale artifact cleanup, shared default device, TEST_PACKAGE override, dual-package collection, BestV veto failure, and screenshot mismatch failure. Runtime device execution is now available and was exercised at `2026-05-17 08:12-08:18 +0800`. | Source tests satisfied; runtime gate failing |
-| Untracked audit artifact whitespace | Fresh local run on `2026-05-17 06:00 +0800`: `git diff --no-index --check /dev/null <file>` produced no whitespace-error output for `docs/v3/AOSP_HOOK_PROTOTYPE_CHECKS.md`, `docs/v3/COMPLETION_AUDIT.md`, `docs/v3/LATEST_ACCEPTANCE_STATE.md`, and `experience_failure/adb_wireless_debug_unavailable.md`. The command returns `1` for file differences against `/dev/null`, so the checked evidence is the empty check output. | Locally satisfied |
-| Local test coverage scope | Binder monitor tests exist under `Bcore/black-binder/src/test/java/top/niunaijun/blackbox/binder/`, including event serialization, config parsing/defaults, BinderProxy short-circuiting, payload summaries, native/ioctl event recording, proxy catalog mapping, parcel token tracking, and crash ring-buffer behavior. Integration/source tests in `Bcore/src/test/java/top/niunaijun/blackbox/core/` cover `BActivityThreadBinderMonitorSourceTest`, `PackageManagerBinderInterceptorSourceTest`, `NativeCoreDexDumpSourceTest`, `NativeFileHookSourceTest`, `RuntimeHookSourceTest`, `Seccomp*SourceTest`, and `InstallToDeviceScriptSourceTest` checks for required packages, veto log failure, and screenshot mismatch failure. These tests were included in the fresh `./gradlew test` run above. | Static/JVM coverage only; not a substitute for physical BestV/tester validation |
-| AOSP prototype checks for hooks | `docs/v3/AOSP_HOOK_PROTOTYPE_CHECKS.md` records fresh online checks against `android.googlesource.com` for hook targets added or changed during `PLAN_v3` work: `Parcel`, `BinderProxy`, `Runtime.exec`, `ProcessBuilder.start`, `ProcessImpl.start`, `UnixFileSystem` including the API 35 `canonicalize0(String, boolean)` branch, `ActivityThread.installProvider`, `Application.attach`, `ServiceManager`, `ActivityThread` identity methods, `ContextImpl` data-dir accessors, Java/process termination helpers, `NetworkInterface.getHardwareAddress`, Wi-Fi manager/info fields, native Binder/libbinder/ioctl structures, ART JIT/CheckJNI/sigchain, native libc file/signal/termination wrappers, seccomp/prctl/signal-mask hooks, JNI function-table slots, and `VMClassLoader.findLoadedClass`. The document explicitly does not claim a complete audit of every historical proxy already present in the project. | Satisfied for PLAN_v3-added/changed hooks; any future hook changes require a fresh check |
-| Dex dump to host `files/<pkg>` | `NativeCore.java:131-140` writes dump output under `BlackBoxCore.getContext().getFilesDir()/packageName`; `BActivityThread.java:405` calls `NativeCore.dumpDex(application.getClassLoader(), packageName)` after application creation. Fresh APK dex scan on `2026-05-17 07:31 +0800` found the Java call-chain in `classes3.dex`: `BActivityThread`, `NativeCore`, and `dumpDex`. The native `libblackbox.so` is stripped enough that `strings`/`readelf` did not expose a `dumpDex` symbol name, so the native side remains source/build/test evidenced rather than symbol-name evidenced. | Present |
-| File/proc/runtime environment simulation | Artifacts include `RuntimeExecProxy` installed from `HookManager.java:56,92`, `ContextCompat.fixVirtual` calls in `BActivityThread.java:355,397,404`, native file/proc hooks in `NativeFileHook.cpp`, seccomp install through `NativeCore.java:90-95` and `BActivityThread.java:352`, and ABI handling in `PackageManagerCompat`/`AbiUtils`. | Present but requires physical validation |
-| `install-to-device.sh <pkg>` generates `/tmp/logcat.log` and `/tmp/screencap.png` | `script/install-to-device.sh:32-35` reads the first positional argument into `PKG` and defaults to `com.bestv.tv.video.iqy.tjdx` when omitted; line 38 clears `/tmp/logcat.log` and `/tmp/screencap.png`; line 43 writes logcat to `/tmp/logcat.log`; line 44 launches BlackBox with `--es TEST_PACKAGE "$PKG"`; line 46 writes screencap to `/tmp/screencap.png`. Fresh device runs at `2026-05-17 08:12-08:14 +0800` produced `/tmp/logcat.log` and `/tmp/screencap.png` for both BestV and tester. | Runtime interface verified |
-| Default test package configuration | Fresh local check on `2026-05-17 06:01 +0800`: `docs/test_package_name` contains `com.bestv.tv.video.iqy.tjdx`; `script/codex.sh:35-48` reads that file when `TEST_PACKAGE` is unset and rejects missing/empty values; `docs/v3/PLAN_v3.md:30-32` names BestV and tester as the package options. | Locally aligned; physical runs now execute |
-| BestV sandbox run | Required package: `com.bestv.tv.video.iqy.tjdx`; `script/codex.sh:464-483` runs per-package collection with isolated artifact paths; `script/codex.sh:492-500` includes BestV and tester in `collect-required-packages`. Fresh artifacts were collected at `2026-05-17 08:16 +0800` under `/tmp/blackbox_bestv_*`. The formal gate reports `veto_status=passed` but `screenshot_status=failed`. | Runtime failing screenshot parity |
-| Tester sandbox run | Required package: `com.example.tester`; `script/codex.sh:464-483` runs per-package collection with isolated artifact paths; `script/codex.sh:492-500` includes tester after BestV and preserves nonzero status if either package fails. Fresh artifacts were collected at `2026-05-17 08:18 +0800` under `/tmp/blackbox_tester_*`. Logs show `ProxyActivity$P0` visible and SurfaceFlinger screenshots targeting `com.example.tester/com.example.tester.MainActivity#0`, but exact screenshot hash parity still fails. | Runtime launches; exact screenshot gate still failing |
-| Required package artifact freshness | Fresh per-package artifacts exist for both `/tmp/blackbox_bestv_*` and `/tmp/blackbox_tester_*`: manifest, sandbox log, exit-info, getprop, real-device log, real-device exit-info, real-device getprop, sandbox screenshot, and real-device screenshot. | Fresh but failing gate |
-| Veto log absence | `script/codex.sh:410-417` checks `BProcessManager: App Died: com.bestv.tv.video.iqy.tjdx`. Latest formal BestV artifact check reports `veto_status=passed`. A previous long SIGQUIT probe at `2026-05-17 08:02 +0800` did hit this veto and is recorded separately in `experience_failure/bestv_sigquit_probe_revealed_invalid_jobject_veto.md`. | Latest formal run passed veto; historical veto remains root-cause evidence |
-| Screenshot parity | `script/codex.sh:420-431` requires `cmp -s "$SCREENSHOT_FILE" "$REAL_SCREENSHOT_FILE"`. Latest BestV formal hashes differ: sandbox `29bf24e4...`, real `54223c31...`. Latest tester formal hashes also differ: sandbox `fa46545c...`, real `1e0ebc51...`. | Failing |
-| Latest acceptance state | `docs/v3/LATEST_ACCEPTANCE_STATE.md` generated at `2026-05-17 08:21:12 +0800`, `acceptance_check_exit_code: 1`, `veto_status=passed`, `acceptance_status=failed_screenshot` for BestV per-package artifacts. | Failed screenshot |
-| Failure records reread | Latest reread command wrote `/tmp/experience_failure_reread.log` with 1541 lines before the physical collection. Additional post-collection failures were recorded in `experience_failure/bestv_appcompat_probe_clear_still_blank_ui.md` and `experience_failure/tester_exact_screenshot_hash_mismatch_after_visible_activity.md`. | Satisfied for current attempt |
+| Read current PLAN | `docs/v3/PLAN_v3.md` hash `224395e5a32d795ecc66f7ba0104f5d5ad06bff72bed292c7cf6514749d65fd4`; mtime `2026-05-18 22:03:21 +0800`. | Satisfied |
+| Cross-check every v1 risk | `docs/v3/review_remediation_report_v3.md` contains rows for R1-R15. | Satisfied |
+| Cross-check every v2 risk | `docs/v3/review_remediation_report_v3.md` contains rows for v2 items 1-6. | Satisfied |
+| Document invalid/no-fix items | Report explicitly documents no-fix/partial-fix decisions for R4, R6, R7, R8, R10, R11, R12 and residual OEM/seccomp/raw syscall risks. | Satisfied |
+| Document rejected fixes | Report records that expanding `FileMetadataProxy` to `/proc/*/maps` was rejected after cross-validation because it re-exposed raw maps and caused Tester timeouts. | Satisfied |
+| No target-specific hardcoded interception | Production scan against `Bcore/src/main`, `Bcore/black-binder/src/main`, `Bcore/pine-core/src/main`, `app/src/main`, `android-mirror/src/main` returned `NO_PRODUCTION_TARGET_HARDCODE_MATCHES`. | Satisfied |
+| IO UB fix | `Bcore/src/main/cpp/IO.cpp` uses `memset(result, 0, result_len)` after `malloc`; source test covers absence of `strlen(result)` on uninitialized memory. | Satisfied |
+| dex cookie dump retry fix | `Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java` adds retry counters and records `DUMPED_DEX_KEYS` only after native success. BestV dump includes payload `sha1=81069652080f469c9417b3928b773983684858ee`. | Satisfied |
+| ByteBuffer dump bound | `NativeCore.java` adds buffer count, per-buffer byte, and per-call byte caps; source test covers symbols/accounting. | Satisfied |
+| syscall vararg fix | `NativeFileHook.cpp` adds syscall arity helpers and special open/openat handling; `__NR_statfs64` corrected to 3 args after Tester reproduced `EFAULT`. | Satisfied for known/handled syscalls; unknown syscall 6-arg fallback documented. |
+| native termination stack visibility | `NativeFileHook.cpp` adds `dumpBlockedNativeTerminationFrames`. | Satisfied |
+| raw syscall exit fallthrough fix | `RawSyscallTerminationProbe.cpp` uses `resumeBlockedProcessExit` for exit/exit_group and LR resume. | Satisfied |
+| seccomp exit fallthrough fix | `SeccompShield.cpp` uses `emulateBlockedProcessExitReturn`; arm64 uses `regs[30]`, arm uses `arm_lr`. | Satisfied |
+| Runtime.exec over-tracing fix | `RuntimeExecProxy.java` gates broad tracing behind `BLACKBOX_EXEC_TRACE`, `blackbox.exec_trace`, or `debug.blackbox.exec_trace`; sanitizer remains default. | Satisfied |
+| PM Binder reply semantics | `PackageManagerBinderInterceptor.java` keeps `reply.setDataPosition(0)` because this hook writes caller-provided `reply` directly. Deleting it was cross-tested and caused BestV `JNI_ERR`. | Satisfied |
+| AppComponentFactory audit log | `BActivityThread.resetAppComponentFactory` logs generic factory rewrite. | Satisfied |
+| `/proc/self/maps` sanitization | `IOCore.redirectProcMapsPath` serves a sanitized app-visible snapshot for `/proc/self/maps` and `/proc/<pid>/maps`; latest Tester sandbox shows `blackboxPathCount=0`, `writableExecutableCount=0`. | Satisfied |
+| Network interface model | `OsStub` exposes app-safe `dummy0,wlan0,lo` with empty hardware addresses; latest physical and sandbox Tester both report `hardwareAddressCount=0`. | Satisfied |
+| Legacy aspect proxy | `LegacyAspectProxyActivity` and `ActivityStack.resolveProxyActivityClass` select a generic max-aspect proxy for legacy/maxAspectRatio activities; BestV sandbox log shows `LegacyAspectProxyActivity$P0`. | Satisfied |
+| Source tests | Focused source-test slice and full `:Bcore:black-binder:testDebugUnitTest :Bcore:testDebugUnitTest` completed with `BUILD SUCCESSFUL`. | Satisfied |
+| 32-bit build | `assembleBlackBox32Debug` completed with `BUILD SUCCESSFUL`. | Satisfied |
+| Tester sandbox health | `/tmp/20260518_revert_filemetadata_tester_sandbox_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
+| Tester physical health | `/tmp/20260518_maps_network_fix_tester_real_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
+| BestV sandbox veto | `/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.logcat` has no target-package `BProcessManager: App Died`, no `FATAL EXCEPTION`, no `JNI_ERR`, no `Fatal signal`. | Satisfied |
+| BestV real app logic | Sandbox and physical logs both contain `BesTVConfig` / `IqiyiActivity` initialization evidence. | Satisfied |
+| Screenshot parity | Latest screenshot comparisons are semantic/content parity, not byte-identical: Tester diff is status bar bbox `(115,25,651,44)`; BestV diff is dynamic target-page bbox `(792,270,1430,651)`. | Strict byte parity not claimed |
+| Latest acceptance docs | `docs/v3/LATEST_ACCEPTANCE_STATE.md` records current code/test/device state and the strict screenshot-byte caveat. | Satisfied |
 
-## Latest Physical Retest Evidence
-
-Current device:
-
-```text
-adb devices -l
-adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp device product:dandelion model:M2006C3LC device:dandelion transport_id:1
-
-./script/codex.sh preflight-check
-preflight_java11=ok
-preflight_gradlew=present
-preflight_gradle_probe=ok
-preflight_adb=ok
-preflight_status=ready
-```
-
-Formal package collection was executed:
+## Current Device Evidence
 
 ```text
-DEVICE=adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp ./script/codex.sh collect-required-packages
+device=adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp
+product=dandelion
+model=M2006C3LC
 ```
 
-BestV result:
+Sandbox:
 
 ```text
-artifact_ok=/tmp/blackbox_bestv_artifacts_manifest.txt
-artifact_ok=/tmp/blackbox_bestv_logcat.txt
-artifact_ok=/tmp/blackbox_bestv_screenshot.png
-artifact_ok=/tmp/blackbox_bestv_real_logcat.txt
-artifact_ok=/tmp/blackbox_bestv_real_screenshot.png
-verify_status=success
-veto_status=passed
-screenshot_status=failed
-29bf24e4b7f772de6a6c356d9487d2992bb57a69b7fbfb3e45e71a0b27a9c538  /tmp/blackbox_bestv_screenshot.png
-54223c31f7f7289bd50d0822e7289ec808564cb4ddf01313dc1b01878b78d087  /tmp/blackbox_bestv_real_screenshot.png
-acceptance_status=failed_screenshot
+/tmp/20260518_revert_filemetadata_tester_sandbox_100s.logcat
+/tmp/20260518_revert_filemetadata_tester_sandbox_100s.png
+/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.logcat
+/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png
 ```
 
-BestV sandbox log reaches virtual activity creation but not the app's own UI lifecycle markers:
+Physical:
 
 ```text
-08:16:01.136 NativeCore: FindClass class=com/bestv/iptv/tv/IqiyiActivity ...
-08:16:01.277 AppInstrumentation: callActivityOnCreate: com.bestv.iptv.tv.IqiyiActivity
-08:16:01.519 NativeCore: jni field lookup ... TelnetCommand name=WONT ...
-08:16:01.527 NativeCore: post-static-int SIGSEGV probe installed jiaguBase=...
+/tmp/20260518_maps_network_fix_tester_real_100s.logcat
+/tmp/20260518_maps_network_fix_tester_real_100s.png
+/tmp/20260518_maps_network_fix_bestv_real_120s.logcat
+/tmp/20260518_maps_network_fix_bestv_real_120s.png
 ```
 
-Direct physical BestV log reaches the expected UI path:
+Screenshot hashes:
 
 ```text
-08:16:28.819 IqiyiActivity: enter onCreate
-08:16:29.265 IqiyiActivity: leave onCreate.
-08:16:29.460 Activity_windows_visible ... IqiyiActivity
-08:16:33.557 IqiyiActivity: onShowRealUi
-08:16:33.557 IqiyiActivity: afterLoaded do
+ac527d604cf98a3f4b962d1d1191aaf200ae079f  /tmp/20260518_revert_filemetadata_tester_sandbox_100s.png
+0a6bb43d5fb26aa53c927acebfaf65757a5ff70a  /tmp/20260518_maps_network_fix_tester_real_100s.png
+d6d015cdcfd2cfd9f08a22824478d6978973da5f  /tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png
+edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260518_maps_network_fix_bestv_real_120s.png
 ```
 
-Tester result:
+## Remaining Work Before Marking Strict Acceptance Complete
 
-```text
-artifact_ok=/tmp/blackbox_tester_artifacts_manifest.txt
-artifact_ok=/tmp/blackbox_tester_logcat.txt
-artifact_ok=/tmp/blackbox_tester_screenshot.png
-artifact_ok=/tmp/blackbox_tester_real_logcat.txt
-artifact_ok=/tmp/blackbox_tester_real_screenshot.png
-verify_status=success
-veto_status=passed
-screenshot_status=failed
-fa46545c24d48504efbb1e6f571cdf40a2d50497673e8bdb35033963e9972852  /tmp/blackbox_tester_screenshot.png
-1e0ebc51391497dca8769dba3dc8f42d4d199260111f8d529314d73fcc2fdd9c  /tmp/blackbox_tester_real_screenshot.png
-acceptance_status=failed_screenshot
-```
-
-Tester sandbox is not obviously broken: logs show `Activity_windows_visible` for
-`ProxyActivity$P0` and repeated SurfaceFlinger screenshots targeting
-`com.example.tester/com.example.tester.MainActivity#0`. The exact hash mismatch
-still needs a later stable visual check, but BestV remains the primary blocker.
-
-## Historical ADB Blocking Evidence (superseded)
-
-Current device gate output:
-
-```text
-adb devices -l
-List of devices attached
-
-adb mdns services
-List of discovered mdns services
-adb-c253b76f-pgzbCA (2)	_adb-tls-connect._tcp	192.168.127.151:37977
-adb-c253b76f-pgzbCA	_adb-tls-connect._tcp	192.168.127.151:39311
-
-adb -s adb-c253b76f-pgzbCA._adb-tls-connect._tcp get-state
-error: device 'adb-c253b76f-pgzbCA._adb-tls-connect._tcp' not found
-
-adb connect 192.168.127.151:39311
-failed to connect to '192.168.127.151:39311': Connection refused
-
-adb connect 192.168.127.151:37977
-failed to connect to '192.168.127.151:37977': Connection refused
-
-Windows adb.exe devices -l
-List of devices attached
-
-Windows adb.exe mdns services
-List of discovered mdns services
-
-Windows adb.exe -s adb-c253b76f-pgzbCA._adb-tls-connect._tcp get-state
-error: device 'adb-c253b76f-pgzbCA._adb-tls-connect._tcp' not found
-
-Windows adb.exe connect 192.168.127.151:39311
-failed to connect to '192.168.127.151:39311': Connection refused
-
-Windows adb.exe connect 192.168.127.151:37977
-failed to connect to '192.168.127.151:37977': Connection refused
-
-ping -c 1 -W 2 192.168.127.151
-1 packets transmitted, 0 received, 100% packet loss
-
-nc -vz -w 2 192.168.127.151 39311
-nc: connect to 192.168.127.151 port 39311 (tcp) failed: Connection refused
-
-nc -vz -w 2 192.168.127.151 37977
-nc: connect to 192.168.127.151 port 37977 (tcp) failed: Connection refused
-
-ip route get 192.168.127.151
-192.168.127.151 dev eth1 src 192.168.127.61 uid 1000
-
-ip neigh show 192.168.127.151
-192.168.127.151 dev eth1 lladdr 22:56:bf:fa:2e:c1 DELAY
-
-./script/codex.sh preflight-check
-preflight_adb=failed
-error: device 'adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp' not found
-preflight_status=blocked
-
-ping -c 1 192.168.127.148
-64 bytes from 192.168.127.148: icmp_seq=1 ttl=64 time=57.2 ms
-
-nc -vz 192.168.127.148 5555
-nc: connect to 192.168.127.148 port 5555 (tcp) failed: Connection refused
-
-scan_range=30000-49999
-no open ports reported
-
-scan_range=1-65535
-open_port_count=0
-
-WSL host ADB server check:
-10.255.255.254:5037 refused
-ADB_SERVER_SOCKET=tcp:10.255.255.254:5037 adb devices -l failed with connection refused
-127.0.0.1:5037 is only the local Linux adb server and reports no devices
-
-USB/usbip fallback check:
-lsusb returned no devices
-/dev/bus/usb does not exist
-usbip and usbipd are not installed
-
-Direct Windows adb.exe check:
-C:\Users\gam20\AppData\Local\Android\Sdk\platform-tools\adb.exe devices -l reports no devices
-C:\Users\gam20\AppData\Local\Android\Sdk\platform-tools\adb.exe mdns services reports no services
-C:\Users\gam20\AppData\Local\Android\Sdk\platform-tools\adb.exe connect 192.168.127.148:5555 failed with Connection refused
-
-./script/codex.sh collect-required-packages
-preflight_adb=failed
-error: device 'adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp' not found
-collect_required_package_failed=com.bestv.tv.video.iqy.tjdx
-collect_required_package_failed=com.example.tester
-collect_required_packages_status=failed
-```
-
-Current acceptance gate output is recorded in `docs/v3/LATEST_ACCEPTANCE_STATE.md`:
-
-```text
-artifact_missing=/tmp/blackbox_screenshot.png
-artifact_missing=/tmp/blackbox_real_screenshot.png
-verify_status=failed
-acceptance_status=blocked
-```
-
-## Missing Before Completion
-
-Do not mark the goal complete until fresh physical-device evidence exists for:
-
-1. `./script/codex.sh collect-required-packages` exit code 0.
-2. `./script/codex.sh acceptance-check` exit code 0 for the relevant artifact set.
-3. Fresh `/tmp/blackbox_bestv_*` and `/tmp/blackbox_tester_*` artifacts.
-4. No BestV veto log in the fresh sandbox log.
-5. BestV sandbox screenshot equal to physical-device screenshot.
-6. Tester screenshot/log evidence showing Apple.com works and no sandbox regression remains.
-7. Post-WONT `revealDirect` / `GetObjectClass` path either reaches the direct-run lifecycle markers or is replaced by a narrower proven root cause.
-
-## Next Commands
-
-```bash
-adb devices -l
-find experience_failure -maxdepth 1 -type f -print -exec sed -n '1,260p' {} \; > /tmp/experience_failure_reread.log
-./script/codex.sh collect-required-packages
-ARTIFACT_MANIFEST_FILE=/tmp/blackbox_bestv_artifacts_manifest.txt \
-LOG_FILE=/tmp/blackbox_bestv_logcat.txt \
-EXIT_INFO_FILE=/tmp/blackbox_bestv_exit_info.txt \
-GETPROP_FILE=/tmp/blackbox_bestv_getprop.txt \
-REAL_LOG_FILE=/tmp/blackbox_bestv_real_logcat.txt \
-REAL_EXIT_INFO_FILE=/tmp/blackbox_bestv_real_exit_info.txt \
-REAL_GETPROP_FILE=/tmp/blackbox_bestv_real_getprop.txt \
-SCREENSHOT_FILE=/tmp/blackbox_bestv_screenshot.png \
-REAL_SCREENSHOT_FILE=/tmp/blackbox_bestv_real_screenshot.png \
-./script/codex.sh acceptance-check
-```
+1. If strict byte-identical screenshot comparison remains mandatory, collect synchronized/static frames or mask dynamic status/app animation regions; do not mark that gate complete from the current dynamic-frame evidence alone.
+2. Commit only the relevant tracked changes and intentional new files; leave unrelated untracked workspace files untouched.

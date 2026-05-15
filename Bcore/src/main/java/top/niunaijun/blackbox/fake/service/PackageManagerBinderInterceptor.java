@@ -56,6 +56,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         reply.writeNoException();
         reply.writeInt(1);
         packageInfo.writeToParcel(reply, 0);
+        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
         reply.setDataPosition(0);
         recordHandled(call, describePackageInfo(packageInfo));
         return true;
@@ -74,6 +75,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         reply.writeNoException();
         reply.writeInt(1);
         applicationInfo.writeToParcel(reply, 0);
+        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
         reply.setDataPosition(0);
         recordHandled(call, describeApplicationInfo(applicationInfo));
         return true;
@@ -89,6 +91,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         }
         reply.writeNoException();
         reply.writeInt(BActivityThread.getBUid());
+        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
         reply.setDataPosition(0);
         recordHandled(call, "uid=" + BActivityThread.getBUid());
         return true;

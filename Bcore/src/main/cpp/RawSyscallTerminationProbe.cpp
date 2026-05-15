@@ -97,6 +97,31 @@ static bool isTerminationSyscall(int sysno, const mcontext_t &mc) {
             return false;
     }
 }
+
+static bool isProcessExitSyscall(int sysno) {
+    switch (sysno) {
+#ifdef __NR_exit
+        case __NR_exit:
+            return true;
+#endif
+#ifdef __NR_exit_group
+        case __NR_exit_group:
+            return true;
+#endif
+        default:
+            return false;
+    }
+}
+
+static void resumeBlockedProcessExit(mcontext_t &mc, const PatchEntry *entry) {
+    if (mc.arm_lr != 0) {
+        mc.arm_pc = static_cast<unsigned long>(mc.arm_lr);
+        return;
+    }
+    if (entry != nullptr) {
+        mc.arm_pc = static_cast<unsigned long>(entry->address + entry->size);
+    }
+}
 #endif
 
 static const char *syscallName(int sysno) {
@@ -372,7 +397,7 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                             " lr=0x%lx sp=0x%lx r0=0x%lx r1=0x%lx r2=0x%lx r7=0x%lx"
                             " root=%d self=%d map=0x%" PRIxPTR "-0x%" PRIxPTR
                             " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR
-                            " lrFileOff=0x%" PRIxPTR " path=%s",
+                            " lrFileOff=0x%" PRIxPTR " resume=%s path=%s",
                             syscallName(sysno),
                             sysno,
                             entry->address,
@@ -389,8 +414,13 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                             entry->map_offset,
                             pc_file_offset,
                             lr_file_offset,
+                            isProcessExitSyscall(sysno) ? "lr" : "next",
                             entry->path);
         mc.arm_r0 = 0;
+        if (isProcessExitSyscall(sysno)) {
+            resumeBlockedProcessExit(mc, entry);
+            return;
+        }
     } else {
         long result = emulateRedirectableRawSyscall(sysno, mc);
         if (shouldLogNonTerminationTrap(entry)) {

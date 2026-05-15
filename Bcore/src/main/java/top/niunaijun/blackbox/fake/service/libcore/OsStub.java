@@ -10,7 +10,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,21 +35,16 @@ import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
  */
 public class OsStub extends ClassInvocationStub {
     public static final String TAG = "OsStub";
-    private static final byte[] DEFAULT_ANDROID_MAC_BYTES = new byte[]{
-            0x02, 0x00, 0x00, 0x00, 0x00, 0x00
-    };
     private static final String[] PROPERTY_WIFI_INTERFACE_KEYS = new String[]{
             "wifi.interface",
             "ro.vendor.wifi.sap.interface",
             "wifi.concurrent.interface"
     };
-    private static final String[] PROPERTY_WIFI_MAC_KEYS = new String[]{
-            "ro.ril.oem.wifimac",
-            "ro.boot.wifimacaddr",
-            "persist.vendor.wifi.mac"
-    };
     private static final String[] NETWORK_INTERFACE_CANDIDATES = new String[]{
-            "wlan0", "ap0", "eth0"
+            "dummy0", "wlan0", "lo", "ap0", "eth0"
+    };
+    private static final String[] CORE_NETWORK_INTERFACE_CANDIDATES = new String[]{
+            "dummy0", "wlan0", "lo"
     };
     private Object mBase;
 
@@ -206,7 +200,7 @@ public class OsStub extends ClassInvocationStub {
                         null,
                         null,
                         null,
-                        record.hardwareAddress.clone());
+                        record.hardwareAddress == null ? null : record.hardwareAddress.clone());
                 Array.set(array, i, ifaddrs);
             }
             return array;
@@ -225,8 +219,7 @@ public class OsStub extends ClassInvocationStub {
         List<InterfaceRecord> interfaces = new ArrayList<>();
         int fallbackIndex = 1;
         for (String name : collectSyntheticInterfaceNames()) {
-            byte[] hardwareAddress = readHardwareAddress(name);
-            if (hardwareAddress == null) {
+            if (!shouldExposeSyntheticInterface(name)) {
                 continue;
             }
             int index = readSysfsInterfaceIndex(name);
@@ -235,7 +228,7 @@ public class OsStub extends ClassInvocationStub {
             } else {
                 fallbackIndex = Math.max(fallbackIndex, index + 1);
             }
-            interfaces.add(new InterfaceRecord(name, index, hardwareAddress));
+            interfaces.add(new InterfaceRecord(name, index, appVisibleHardwareAddress(name)));
         }
         return interfaces;
     }
@@ -282,55 +275,33 @@ public class OsStub extends ClassInvocationStub {
         return name != null
                 && name.length() > 0
                 && name.length() < 64
-                && !name.equals("lo")
                 && name.matches("[A-Za-z0-9_.:-]+");
     }
 
-    private static byte[] readHardwareAddress(String name) {
-        byte[] sysfsAddress = readSysfsHardwareAddress(name);
-        if (sysfsAddress != null) {
-            return sysfsAddress;
-        }
-        return readSystemPropertyMacAddress(name);
+    private static boolean isExistingNetworkInterface(String name) {
+        return name != null && new File("/sys/class/net/" + name).exists();
     }
 
-    private static byte[] readSysfsHardwareAddress(String name) {
-        File addressFile = new File("/sys/class/net/" + name + "/address");
-        if (!addressFile.isFile()) {
-            return null;
-        }
-        try (BufferedReader reader = new BufferedReader(new FileReader(addressFile))) {
-            return parseMac(reader.readLine());
-        } catch (Throwable e) {
-            Slog.d(TAG, "read hardware address failed for " + name + ": " + e);
-            return null;
-        }
-    }
-
-    private static byte[] readSystemPropertyMacAddress(String name) {
-        if (!isWifiIdentityInterface(name)) {
-            return null;
-        }
-        for (String property : PROPERTY_WIFI_MAC_KEYS) {
-            byte[] mac = parseMac(SystemPropertiesCompat.get(property));
-            if (mac != null) {
-                return mac;
-            }
-        }
-        return null;
-    }
-
-    private static boolean isWifiIdentityInterface(String name) {
-        if ("wlan0".equals(name) || "ap0".equals(name)) {
+    private static boolean shouldExposeSyntheticInterface(String name) {
+        if (isExistingNetworkInterface(name)) {
             return true;
         }
-        for (String property : PROPERTY_WIFI_INTERFACE_KEYS) {
-            String propertyInterface = SystemPropertiesCompat.get(property);
-            if (name != null && name.equals(propertyInterface)) {
+        for (String candidate : CORE_NETWORK_INTERFACE_CANDIDATES) {
+            if (candidate.equals(name)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * NetworkInterface.getHardwareAddress() follows Android R+ privacy rules:
+     * non-system apps normally see null/empty MAC data. Supplying an empty
+     * StructIfaddrs.hwaddr keeps OEM NetworkInterface code from dropping the
+     * interface while still exposing no hardware address bytes to app code.
+     */
+    private static byte[] appVisibleHardwareAddress(String name) {
+        return new byte[0];
     }
 
     private static int readSysfsInterfaceIndex(String name) {
@@ -346,50 +317,6 @@ public class OsStub extends ClassInvocationStub {
         }
     }
 
-    private static byte[] parseMac(String value) {
-        String normalized = normalizeMacAddress(value);
-        if (normalized == null) {
-            return null;
-        }
-        String[] parts = normalized.split(":");
-        if (parts.length != 6) {
-            return null;
-        }
-        byte[] mac = new byte[6];
-        try {
-            for (int i = 0; i < parts.length; i++) {
-                mac[i] = (byte) Integer.parseInt(parts[i], 16);
-            }
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-        if (Arrays.equals(mac, DEFAULT_ANDROID_MAC_BYTES)) {
-            return null;
-        }
-        return mac;
-    }
-
-    private static String normalizeMacAddress(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        if (trimmed.matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}")) {
-            return trimmed.toLowerCase();
-        }
-        if (trimmed.matches("(?i)[0-9a-f]{12}")) {
-            StringBuilder builder = new StringBuilder();
-            for (int i = 0; i < trimmed.length(); i += 2) {
-                if (i > 0) {
-                    builder.append(':');
-                }
-                builder.append(trimmed.substring(i, i + 2).toLowerCase());
-            }
-            return builder.toString();
-        }
-        return null;
-    }
-
     private static class InterfaceRecord {
         final String name;
         final int index;
@@ -398,7 +325,7 @@ public class OsStub extends ClassInvocationStub {
         InterfaceRecord(String name, int index, byte[] hardwareAddress) {
             this.name = name;
             this.index = index;
-            this.hardwareAddress = hardwareAddress.clone();
+            this.hardwareAddress = hardwareAddress == null ? null : hardwareAddress.clone();
         }
     }
 

@@ -75,6 +75,11 @@ public class SeccompTerminationTrapDiagnosticsSourceTest {
                 logTrap.contains("pc=%p") && logTrap.contains("lr=%p") && logTrap.contains("fp=%p"));
         assertTrue("Trap logging should include raw unwind frames",
                 logTrap.contains("\"  frame[%u]=%p\""));
+        assertTrue("Returning from a trapped bionic exit syscall must not fall through into the fatal trap after the syscall instruction",
+                seccomp.contains("isProcessExitSyscall")
+                        && seccomp.contains("emulateBlockedProcessExitReturn")
+                        && seccomp.contains("context->uc_mcontext.regs[30]")
+                        && seccomp.contains("context->uc_mcontext.arm_lr"));
 
         String installer = sliceBetween(seccomp,
                 "void installTerminationTrapSeccompShield()",
