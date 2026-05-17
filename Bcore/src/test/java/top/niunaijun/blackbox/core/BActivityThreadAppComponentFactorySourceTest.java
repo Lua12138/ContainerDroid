@@ -165,6 +165,73 @@ public class BActivityThreadAppComponentFactorySourceTest {
                 source.contains("context.getClassLoader()"));
     }
 
+    @Test
+    public void bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling() throws Exception {
+        String activityThreadSource = readBActivityThreadSource();
+        String hCallbackSource = readSource(
+                "src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java",
+                "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java");
+        String activityThreadMirror = readSource(
+                "src/main/java/black/android/app/ActivityThread.java",
+                "android-mirror/src/main/java/black/android/app/ActivityThread.java");
+        String launchActivityItemMirror = readSource(
+                "src/main/java/black/android/app/servertransaction/LaunchActivityItem.java",
+                "android-mirror/src/main/java/black/android/app/servertransaction/LaunchActivityItem.java");
+        String compatibilityInfoMirror = readSource(
+                "src/main/java/black/android/content/res/CompatibilityInfo.java",
+                "android-mirror/src/main/java/black/android/content/res/CompatibilityInfo.java");
+        String loadedApkMirror = readSource(
+                "src/main/java/black/android/app/LoadedApk.java",
+                "android-mirror/src/main/java/black/android/app/LoadedApk.java");
+
+        int createCompatInfo = activityThreadSource.indexOf("createCompatibilityInfo(applicationInfo)");
+        int applyCompatInfo = activityThreadSource.indexOf("applyCompatibilityInfo(boundApplication, loadedApk, bindData.compatibilityInfo)");
+        int setAppBindCompatInfo = activityThreadSource.indexOf("_set_compatInfo(bindData.compatibilityInfo)");
+        int makeApplication = activityThreadSource.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
+
+        assertTrue("BActivityThread should create target CompatibilityInfo before application code starts",
+                createCompatInfo >= 0 && createCompatInfo < makeApplication);
+        assertTrue("BActivityThread should apply target CompatibilityInfo to LoadedApk/AppBindData before makeApplication",
+                applyCompatInfo > createCompatInfo && applyCompatInfo < makeApplication);
+        assertTrue("BActivityThread should populate ActivityThread.AppBindData.compatInfo for framework resource/display code",
+                setAppBindCompatInfo > createCompatInfo && setAppBindCompatInfo < makeApplication);
+        assertTrue("CompatibilityInfo should be computed from the target ApplicationInfo, not the host package",
+                activityThreadSource.contains("BRCompatibilityInfo.get()._new(")
+                        && activityThreadSource.contains("applicationInfo,")
+                        && activityThreadSource.contains("configuration.screenLayout")
+                        && activityThreadSource.contains("configuration.smallestScreenWidthDp")
+                        && activityThreadSource.contains("applicationInfo.targetSdkVersion < Build.VERSION_CODES.O"));
+        assertTrue("LoadedApk should receive the same target CompatibilityInfo instance through modern and legacy paths",
+                activityThreadSource.contains("BRLoadedApk.get(loadedApk).setCompatibilityInfo(compatibilityInfo)")
+                        && activityThreadSource.contains("BRLoadedApkICS.get(loadedApk)._set_mCompatibilityInfo(compatibilityInfo)"));
+        assertTrue("BActivityThread should expose the bound CompatibilityInfo for launch transaction repair",
+                activityThreadSource.contains("Object compatibilityInfo;")
+                        && activityThreadSource.contains("getCompatibilityInfo()"));
+
+        int launchActivityContext = hCallbackSource.indexOf("LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(launchActivityItem)");
+        int setIntent = hCallbackSource.indexOf("_set_mIntent(intent)", launchActivityContext);
+        int setInfo = hCallbackSource.indexOf("_set_mInfo(activityInfo)", launchActivityContext);
+        int getCompatibilityInfo = hCallbackSource.indexOf("getCompatibilityInfo()", launchActivityContext);
+        int setLaunchCompatInfo = hCallbackSource.indexOf("_set_mCompatInfo(compatibilityInfo)", getCompatibilityInfo);
+
+        assertTrue("HCallbackProxy should rewrite LaunchActivityItem intent/info first",
+                launchActivityContext >= 0 && setIntent > launchActivityContext && setInfo > setIntent);
+        assertTrue("HCallbackProxy should propagate the target CompatibilityInfo into LaunchActivityItem",
+                getCompatibilityInfo > setInfo && setLaunchCompatInfo > getCompatibilityInfo);
+        assertTrue("ActivityThread.AppBindData mirror must expose compatInfo",
+                activityThreadMirror.contains("@BClassName(\"android.app.ActivityThread$AppBindData\")")
+                        && activityThreadMirror.contains("Object compatInfo();"));
+        assertTrue("LaunchActivityItem mirror must expose mCompatInfo",
+                launchActivityItemMirror.contains("@BClassName(\"android.app.servertransaction.LaunchActivityItem\")")
+                        && launchActivityItemMirror.contains("Object mCompatInfo();"));
+        assertTrue("CompatibilityInfo constructors should return framework objects, not the mirror interface type",
+                compatibilityInfoMirror.contains("Object _new(ApplicationInfo ApplicationInfo0, int int1, int int2, boolean boolean3)"));
+        assertFalse("CompatibilityInfo constructors must not cast framework instances to the mirror interface",
+                compatibilityInfoMirror.contains("CompatibilityInfo _new(ApplicationInfo ApplicationInfo0, int int1, int int2, boolean boolean3)"));
+        assertTrue("LoadedApk mirror should expose setCompatibilityInfo because Android R+ stores it in DisplayAdjustments",
+                loadedApkMirror.contains("void setCompatibilityInfo(@BParamClassName(\"android.content.res.CompatibilityInfo\") Object compatInfo)"));
+    }
+
     private static String readBActivityThreadSource() throws Exception {
         return readSource(
                 "src/main/java/top/niunaijun/blackbox/app/BActivityThread.java",

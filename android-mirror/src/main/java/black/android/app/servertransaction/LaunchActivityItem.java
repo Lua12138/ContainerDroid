@@ -12,5 +12,8 @@ public interface LaunchActivityItem {
     ActivityInfo mInfo();
 
     @BField
+    Object mCompatInfo();
+
+    @BField
     Intent mIntent();
 }

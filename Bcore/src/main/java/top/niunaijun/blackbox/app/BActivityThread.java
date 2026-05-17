@@ -10,6 +10,7 @@ import android.content.ComponentName;
 import android.content.ContentProviderClient;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
@@ -48,9 +49,11 @@ import black.android.app.BRActivityThreadNMR1;
 import black.android.app.BRActivityThreadQ;
 import black.android.app.BRContextImpl;
 import black.android.app.BRLoadedApk;
+import black.android.app.BRLoadedApkICS;
 import black.android.app.BRService;
 import black.android.content.BRBroadcastReceiver;
 import black.android.content.BRContentProviderClient;
+import black.android.content.res.BRCompatibilityInfo;
 import black.android.graphics.BRCompatibility;
 import black.android.security.net.config.BRNetworkSecurityConfigProvider;
 import black.com.android.internal.content.BRReferrerIntent;
@@ -359,11 +362,16 @@ public class BActivityThread extends IBActivityThread.Stub {
         bindData.processName = processName;
         bindData.info = loadedApk;
         bindData.providers = mProviders;
+        bindData.compatibilityInfo = createCompatibilityInfo(applicationInfo);
+        applyCompatibilityInfo(boundApplication, loadedApk, bindData.compatibilityInfo);
 
         ActivityThreadAppBindDataContext activityThreadAppBindData = BRActivityThreadAppBindData.get(boundApplication);
         activityThreadAppBindData._set_instrumentationName(new ComponentName(bindData.appInfo.packageName, Instrumentation.class.getName()));
         activityThreadAppBindData._set_appInfo(bindData.appInfo);
         activityThreadAppBindData._set_info(bindData.info);
+        if (bindData.compatibilityInfo != null) {
+            activityThreadAppBindData._set_compatInfo(bindData.compatibilityInfo);
+        }
         activityThreadAppBindData._set_processName(bindData.processName);
         activityThreadAppBindData._set_providers(bindData.providers);
 
@@ -766,6 +774,47 @@ public class BActivityThread extends IBActivityThread.Stub {
         return mBoundApplication.info;
     }
 
+    public Object getCompatibilityInfo() {
+        return mBoundApplication == null ? null : mBoundApplication.compatibilityInfo;
+    }
+
+    private static Object createCompatibilityInfo(ApplicationInfo applicationInfo) {
+        if (applicationInfo == null) {
+            return null;
+        }
+        try {
+            Configuration configuration = BlackBoxCore.getContext().getResources().getConfiguration();
+            boolean forceCompat = applicationInfo.targetSdkVersion > 0
+                    && applicationInfo.targetSdkVersion < Build.VERSION_CODES.O;
+            return BRCompatibilityInfo.get()._new(
+                    applicationInfo,
+                    configuration.screenLayout,
+                    configuration.smallestScreenWidthDp,
+                    forceCompat);
+        } catch (Throwable e) {
+            Slog.d(TAG, "create CompatibilityInfo failed: " + e);
+            return null;
+        }
+    }
+
+    private static void applyCompatibilityInfo(Object boundApplication, Object loadedApk, Object compatibilityInfo) {
+        if (compatibilityInfo == null) {
+            return;
+        }
+        try {
+            BRLoadedApk.get(loadedApk).setCompatibilityInfo(compatibilityInfo);
+        } catch (Throwable ignored) {
+        }
+        try {
+            BRLoadedApkICS.get(loadedApk)._set_mCompatibilityInfo(compatibilityInfo);
+        } catch (Throwable ignored) {
+        }
+        try {
+            BRActivityThreadAppBindData.get(boundApplication)._set_compatInfo(compatibilityInfo);
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static void installProvider(Object mainThread, Context context, ProviderInfo providerInfo, Object holder) throws Throwable {
         Method installProvider = findInstallProviderMethod(mainThread.getClass());
         if (installProvider != null) {
@@ -989,5 +1038,6 @@ public class BActivityThread extends IBActivityThread.Stub {
         ApplicationInfo appInfo;
         List<ProviderInfo> providers;
         Object info;
+        Object compatibilityInfo;
     }
 }

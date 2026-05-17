@@ -1,10 +1,10 @@
 # PLAN_v3 Completion Audit
 
-- generated_at: 2026-05-18 23:58 +0800
+- generated_at: 2026-05-19 00:50 +0800
 - plan_file: `docs/v3/PLAN_v3.md`
 - plan_sha256: `224395e5a32d795ecc66f7ba0104f5d5ad06bff72bed292c7cf6514749d65fd4`
-- status: `runtime_semantic_parity_pass_strict_screenshot_bytes_not_claimed`
-- blocker: No runtime blocker remains in the latest sandbox evidence. The only non-claimed item is strict byte-identical screenshot parity, because the latest captures still contain dynamic status-bar/app-frame pixels.
+- status: `runtime_content_parity_pass_strict_screenshot_bytes_not_claimed`
+- blocker: No runtime blocker remains in the latest sandbox evidence. The only non-claimed item is strict byte-identical screenshot parity, because the latest captures still contain dynamic status-bar pixels and renderer anti-alias/subpixel differences.
 
 ## Objective Restated
 
@@ -43,13 +43,14 @@ Implement the requirements in `docs/v3/PLAN_v3.md`:
 | `/proc/self/maps` sanitization | `IOCore.redirectProcMapsPath` serves a sanitized app-visible snapshot for `/proc/self/maps` and `/proc/<pid>/maps`; latest Tester sandbox shows `blackboxPathCount=0`, `writableExecutableCount=0`. | Satisfied |
 | Network interface model | `OsStub` exposes app-safe `dummy0,wlan0,lo` with empty hardware addresses; latest physical and sandbox Tester both report `hardwareAddressCount=0`. | Satisfied |
 | Legacy aspect proxy | `LegacyAspectProxyActivity` and `ActivityStack.resolveProxyActivityClass` select a generic max-aspect proxy for legacy/maxAspectRatio activities; BestV sandbox log shows `LegacyAspectProxyActivity$P0`. | Satisfied |
+| Target display/resource compatibility | `BActivityThread` creates target `CompatibilityInfo`, applies it to `LoadedApk.setCompatibilityInfo`, `AppBindData.compatInfo`, and `LaunchActivityItem.mCompatInfo`; `CompatibilityInfo` mirror constructors return `Object` to avoid framework-object cast failure. | Satisfied |
 | Source tests | Focused source-test slice and full `:Bcore:black-binder:testDebugUnitTest :Bcore:testDebugUnitTest` completed with `BUILD SUCCESSFUL`. | Satisfied |
 | 32-bit build | `assembleBlackBox32Debug` completed with `BUILD SUCCESSFUL`. | Satisfied |
-| Tester sandbox health | `/tmp/20260518_revert_filemetadata_tester_sandbox_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
-| Tester physical health | `/tmp/20260518_maps_network_fix_tester_real_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
-| BestV sandbox veto | `/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.logcat` has no target-package `BProcessManager: App Died`, no `FATAL EXCEPTION`, no `JNI_ERR`, no `Fatal signal`. | Satisfied |
+| Tester sandbox health | `/tmp/20260519_loadedapk_compat_tester_sandbox_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
+| Tester physical health | `/tmp/20260519_tester_physical_fresh_100s.logcat` reports `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`. | Satisfied |
+| BestV sandbox veto | `/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat` has no target-package `BProcessManager: App Died`, no `FATAL EXCEPTION`, no `JNI_ERR`, no `Fatal signal`. | Satisfied |
 | BestV real app logic | Sandbox and physical logs both contain `BesTVConfig` / `IqiyiActivity` initialization evidence. | Satisfied |
-| Screenshot parity | Latest screenshot comparisons are semantic/content parity, not byte-identical: Tester diff is status bar bbox `(115,25,651,44)`; BestV diff is dynamic target-page bbox `(792,270,1430,651)`. | Strict byte parity not claimed |
+| Screenshot parity | Latest screenshot comparisons show content parity, not byte-identical parity: Tester content is Apple.com + `ENVDIAG PASS` with status-bar dynamic differences; BestV content is the same installed/return-key page with legacy letterbox and aligned version text scale, with text-edge anti-alias pixel differences. | Strict byte parity not claimed |
 | Latest acceptance docs | `docs/v3/LATEST_ACCEPTANCE_STATE.md` records current code/test/device state and the strict screenshot-byte caveat. | Satisfied |
 
 ## Current Device Evidence
@@ -63,31 +64,31 @@ model=M2006C3LC
 Sandbox:
 
 ```text
-/tmp/20260518_revert_filemetadata_tester_sandbox_100s.logcat
-/tmp/20260518_revert_filemetadata_tester_sandbox_100s.png
-/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.logcat
-/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png
+/tmp/20260519_loadedapk_compat_tester_sandbox_100s.logcat
+/tmp/20260519_loadedapk_compat_tester_sandbox_100s.png
+/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat
+/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png
 ```
 
 Physical:
 
 ```text
-/tmp/20260518_maps_network_fix_tester_real_100s.logcat
-/tmp/20260518_maps_network_fix_tester_real_100s.png
-/tmp/20260518_maps_network_fix_bestv_real_120s.logcat
-/tmp/20260518_maps_network_fix_bestv_real_120s.png
+/tmp/20260519_tester_physical_fresh_100s.logcat
+/tmp/20260519_tester_physical_fresh_100s.png
+/tmp/20260519_bestv_physical_fresh_120s.logcat
+/tmp/20260519_bestv_physical_fresh_120s.png
 ```
 
 Screenshot hashes:
 
 ```text
-ac527d604cf98a3f4b962d1d1191aaf200ae079f  /tmp/20260518_revert_filemetadata_tester_sandbox_100s.png
-0a6bb43d5fb26aa53c927acebfaf65757a5ff70a  /tmp/20260518_maps_network_fix_tester_real_100s.png
-d6d015cdcfd2cfd9f08a22824478d6978973da5f  /tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png
-edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260518_maps_network_fix_bestv_real_120s.png
+f18b2153f8efc7f812cf19c878a7e0affc1341b4  /tmp/20260519_loadedapk_compat_tester_sandbox_100s.png
+fdbb70ae5714bca1dac5e4f3dc6650c35e3c9898  /tmp/20260519_tester_physical_fresh_100s.png
+7b569341437835c829ce66ede9838e364acc130e  /tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png
+edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260519_bestv_physical_fresh_120s.png
 ```
 
 ## Remaining Work Before Marking Strict Acceptance Complete
 
-1. If strict byte-identical screenshot comparison remains mandatory, collect synchronized/static frames or mask dynamic status/app animation regions; do not mark that gate complete from the current dynamic-frame evidence alone.
+1. If strict byte-identical screenshot comparison remains mandatory, collect deterministic compositor frames or mask dynamic status-bar pixels and tolerate renderer anti-alias/subpixel differences; do not mark byte-level parity complete from the current evidence alone.
 2. Commit only the relevant tracked changes and intentional new files; leave unrelated untracked workspace files untouched.

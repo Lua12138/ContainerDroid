@@ -134,6 +134,9 @@ public interface ActivityThread {
         Object info();
 
         @BField
+        Object compatInfo();
+
+        @BField
         ComponentName instrumentationName();
 
         @BField

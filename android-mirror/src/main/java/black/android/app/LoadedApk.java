@@ -17,6 +17,7 @@ import java.lang.ref.WeakReference;
 import top.niunaijun.blackreflection.annotation.BClassName;
 import top.niunaijun.blackreflection.annotation.BField;
 import top.niunaijun.blackreflection.annotation.BMethod;
+import top.niunaijun.blackreflection.annotation.BParamClassName;
 
 @BClassName("android.app.LoadedApk")
 public interface LoadedApk {
@@ -49,6 +50,9 @@ public interface LoadedApk {
 
     @BMethod
     Object getResources();
+
+    @BMethod
+    void setCompatibilityInfo(@BParamClassName("android.content.res.CompatibilityInfo") Object compatInfo);
 
     @BMethod
     IServiceConnection forgetServiceDispatcher(Context Context0, ServiceConnection ServiceConnection1);

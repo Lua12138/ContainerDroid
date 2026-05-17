@@ -150,6 +150,10 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
         LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(launchActivityItem);
         launchActivityItemContext._set_mIntent(intent);
         launchActivityItemContext._set_mInfo(activityInfo);
+        Object compatibilityInfo = BActivityThread.currentActivityThread().getCompatibilityInfo();
+        if (compatibilityInfo != null) {
+            launchActivityItemContext._set_mCompatInfo(compatibilityInfo);
+        }
     }
 
     private boolean handleLaunchActivity(Object client) {

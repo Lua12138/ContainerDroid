@@ -1,7 +1,7 @@
 # review_report_v1/v2 整改闭环报告
 
-- 日期：2026-05-18
-- 代码基线：在 `5f097c84ede147483a4cb1919f4e9406b5b46ceb` 之后继续整改
+- 日期：2026-05-19
+- 代码基线：在 `83ddf90` 之后继续整改显示/资源兼容性
 - 输入审计文档：`docs/v3/review_report_v1.md`、`docs/v3/review_report_v2.md`
 - 结论：两份审计报告已逐条核验。属实且适合本轮修复的项目已改；不成立、证据不足或不适合本轮修复的项目均在下表显式说明，没有静默忽略。
 
@@ -74,6 +74,12 @@
    - 修复：`OsStub` 对 app 可见网络接口使用 `dummy0,wlan0,lo` 核心候选，暴露空硬件地址，遵循 Android R+ 普通 app MAC 隐私语义。
    - 验证：最新物理与沙盒 Tester 均为 `interfaceCount=3 upCount=3 loopbackCount=1 hardwareAddressCount=0 interfaceNames=dummy0,wlan0,lo`。
 
+6. 目标 `CompatibilityInfo` 未传播到沙盒 `LoadedApk`/launch transaction：
+   - 失败证据：BestV sandbox 已有 legacy letterbox，但 `version_view` 文本按错误资源/显示兼容尺度渲染；`/tmp/20260519_compatinfo_bestv_sandbox_120s.logcat` 曾出现 `create CompatibilityInfo failed: ClassCastException`，说明 mirror constructor 返回类型会把 framework `android.content.res.CompatibilityInfo` 误 cast 为 mirror interface。
+   - 交叉核验：AOSP `LoadedApk` 构造/`setCompatibilityInfo` 会把 `CompatibilityInfo` 写入 `DisplayAdjustments`；`ActivityThread.AppBindData` 与 `LaunchActivityItem` 都有 compatInfo 字段。当前沙盒此前只改了 proxy activity aspect，未把目标包的 compatibility info 完整传播到 framework 资源/显示路径。
+   - 修复：`BActivityThread` 基于目标 `ApplicationInfo` 创建 `CompatibilityInfo`，写入 `ActivityThread.AppBindData.compatInfo`、`LoadedApk.setCompatibilityInfo(...)`、legacy `LoadedApk.mCompatibilityInfo`，并在 `HCallbackProxy` 修复 `LaunchActivityItem.mCompatInfo`；`CompatibilityInfo` mirror constructor 改为返回 `Object`，避免 cast framework 对象失败。
+   - 验证：`BActivityThreadAppComponentFactorySourceTest.bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling` 固化；BestV sandbox 最新截图中 `version_view` 尺寸与物理直跑内容一致，且无 `BProcessManager: App Died`/`FATAL EXCEPTION`/`JNI_ERR`/`Fatal signal`。
+
 ## 当前验证与验收证据
 
 本轮最终使用设备：
@@ -86,7 +92,7 @@ product:dandelion model:M2006C3LC device:dandelion
 本地验证：
 
 ```text
-./gradlew :Bcore:testDebugUnitTest --tests top.niunaijun.blackbox.core.FileMetadataProxySourceTest --tests top.niunaijun.blackbox.core.NativeFileHookSourceTest.unixFileSystemHookRestoresCanonicalizeReturnToVirtualPath
+./gradlew :Bcore:testDebugUnitTest --tests top.niunaijun.blackbox.core.BActivityThreadAppComponentFactorySourceTest.bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling
 BUILD SUCCESSFUL
 
 ./gradlew :Bcore:black-binder:testDebugUnitTest :Bcore:testDebugUnitTest assembleBlackBox32Debug
@@ -97,10 +103,10 @@ BUILD SUCCESSFUL
 
 | 包名 | 运行时长 | 结果 | 证据 |
 | --- | ---: | --- | --- |
-| `com.example.tester` sandbox | 100s | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`；maps 隐藏和网络模型均通过 | `/tmp/20260518_revert_filemetadata_tester_sandbox_100s.logcat`、`/tmp/20260518_revert_filemetadata_tester_sandbox_100s.png` |
-| `com.example.tester` physical | 100s | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`；网络接口与 sandbox 对齐 | `/tmp/20260518_maps_network_fix_tester_real_100s.logcat`、`/tmp/20260518_maps_network_fix_tester_real_100s.png` |
-| `com.bestv.tv.video.iqy.tjdx` sandbox | 120s | 无目标包 `BProcessManager: App Died`、无 `FATAL EXCEPTION`、无 `JNI_ERR`、无 `Fatal signal`；出现 `BesTVConfig`、`IqiyiActivity`，payload dex dump 成功 | `/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.logcat`、`/tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png` |
-| `com.bestv.tv.video.iqy.tjdx` physical | 120s | 进入同一目标应用页面，日志出现 `BesTVConfig`、`IqiyiActivity`；无同类 fatal | `/tmp/20260518_maps_network_fix_bestv_real_120s.logcat`、`/tmp/20260518_maps_network_fix_bestv_real_120s.png` |
+| `com.example.tester` sandbox | 100s | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`；maps 隐藏和网络模型均通过；截图显示 Apple.com 首页与 `ENVDIAG PASS` | `/tmp/20260519_loadedapk_compat_tester_sandbox_100s.logcat`、`/tmp/20260519_loadedapk_compat_tester_sandbox_100s.png` |
+| `com.example.tester` physical | 100s | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`；网络接口与 sandbox 对齐；截图内容一致，差异仅状态栏动态时间/网速/电量 | `/tmp/20260519_tester_physical_fresh_100s.logcat`、`/tmp/20260519_tester_physical_fresh_100s.png` |
+| `com.bestv.tv.video.iqy.tjdx` sandbox | 120s | 无目标包 `BProcessManager: App Died`、无 `FATAL EXCEPTION`、无 `JNI_ERR`、无 `Fatal signal`；出现 `BesTVConfig`、`IqiyiActivity`，payload dex dump 成功；使用 `LegacyAspectProxyActivity$P0` | `/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat`、`/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png` |
+| `com.bestv.tv.video.iqy.tjdx` physical | 120s | 进入同一目标应用页面；无同类 fatal；截图内容与 sandbox 对齐 | `/tmp/20260519_bestv_physical_fresh_120s.logcat`、`/tmp/20260519_bestv_physical_fresh_120s.png` |
 
 关键 payload dex：
 
@@ -111,13 +117,15 @@ cookie_81069652080f469c9417b3928b773983684858ee.dex
 截图 SHA1 与像素差异：
 
 ```text
-ac527d604cf98a3f4b962d1d1191aaf200ae079f  /tmp/20260518_revert_filemetadata_tester_sandbox_100s.png
-0a6bb43d5fb26aa53c927acebfaf65757a5ff70a  /tmp/20260518_maps_network_fix_tester_real_100s.png
-diff_pixels=753 bbox=(115,25,651,44)  # 状态栏动态时间/图标区域
+f18b2153f8efc7f812cf19c878a7e0affc1341b4  /tmp/20260519_loadedapk_compat_tester_sandbox_100s.png
+fdbb70ae5714bca1dac5e4f3dc6650c35e3c9898  /tmp/20260519_tester_physical_fresh_100s.png
+content_match=Apple.com homepage + ENVDIAG PASS
+dynamic_diff=状态栏时间/网速/电量，Apple 内容区一致
 
-d6d015cdcfd2cfd9f08a22824478d6978973da5f  /tmp/20260518_revert_filemetadata_bestv_sandbox_120s.png
-edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260518_maps_network_fix_bestv_real_120s.png
-diff_pixels=5493 bbox=(792,270,1430,651)  # 目标页动态内容/动画区域
+7b569341437835c829ce66ede9838e364acc130e  /tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png
+edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260519_bestv_physical_fresh_120s.png
+content_match=legacy letterbox + same BestV installed/return-key page + version text scale aligned
+pixel_diff=anti-alias/subpixel/text-edge differences remain; no semantic content delta observed
 ```
 
 ## 残余风险
@@ -127,7 +135,7 @@ diff_pixels=5493 bbox=(792,270,1430,651)  # 目标页动态内容/动画区域
 3. NativeFileHook 对未知 syscall 仍用 6 参兜底，因为 C varargs 无法在运行时安全推断未知 syscall 实参个数；已覆盖当前处理路径和 Tester 发现的 `statfs64`。
 4. 固定 FD `/proc/maps` early shim 仍保留诊断路径残余风险；默认验收通过依赖 Java 层 sanitized snapshot，而不是宣称固定 FD 模型已重构。
 5. Tester 覆盖面大但不是形式化穷尽证明；后续新增检测项必须继续按物理基线、沙盒对比、通用修复流程执行。
-6. 当前截图达到语义/内容一致，但最新采集不是字节完全一致：Tester 差异位于状态栏动态区域，BestV 差异位于目标页动态区域。因此文档不把“字节级截图完全一致”伪报为完成。
+6. 当前截图达到内容一致，但最新采集不是字节完全一致：Tester 差异来自状态栏动态时间/网速/电量，BestV 差异来自文本边缘/抗锯齿级像素。文档只声明内容一致，不把“字节级截图完全一致”伪报为完成。
 
 ## 外部/官方交叉核验来源
 
