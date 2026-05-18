@@ -12,11 +12,13 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Slog;
 
 public class ApplicationAttachSeccompProxy implements IInjectHook {
     private static final String TAG = "ApplicationAttachSeccompProxy";
     private static final String SECCOMP_SERVICE = "seccomp";
+    private static final String SYSTEM_PROPERTIES_CLASS = "android.os.SystemProperties";
     private static final String ATTACH_SECCOMP_ENV = "BLACKBOX_ATTACH_SECCOMP";
     private static final String ATTACH_SECCOMP_PROPERTY = "blackbox.attach_seccomp";
     private static final String ATTACH_SECCOMP_SYSTEM_PROPERTY = "debug.blackbox.attach_seccomp";
@@ -70,20 +72,11 @@ public class ApplicationAttachSeccompProxy implements IInjectHook {
         if (!installed.compareAndSet(false, true)) {
             return;
         }
+        String receiverClassName = receiver.getClass().getName();
         NativeCore.installSeccompShield();
         Slog.d(TAG, "seccomp shield installed after Application.attach for "
-                + receiver.getClass().getName());
-        BlackBoxBinderMonitor.recordProxyCall(
-                SECCOMP_SERVICE,
-                "android.app.Application",
-                "attach",
-                ApplicationAttachSeccompProxy.class.getSimpleName(),
-                "receiver=" + receiver.getClass().getName(),
-                "seccomp shield installed after attach",
-                "handled",
-                false,
-                false,
-                false);
+                + receiverClassName);
+        recordAttachResult(receiverClassName, "seccomp shield installed after attach");
     }
 
     private boolean maybeInstallTerminationTrapAfterAttach(Object receiver) {
@@ -93,20 +86,12 @@ public class ApplicationAttachSeccompProxy implements IInjectHook {
         if (!terminationTrapInstalled.compareAndSet(false, true)) {
             return true;
         }
+        String receiverClassName = receiver.getClass().getName();
         NativeCore.installTerminationTrapSeccompShield();
         Slog.d(TAG, "termination trap seccomp shield installed after Application.attach for "
-                + receiver.getClass().getName());
-        BlackBoxBinderMonitor.recordProxyCall(
-                SECCOMP_SERVICE,
-                "android.app.Application",
-                "attach",
-                ApplicationAttachSeccompProxy.class.getSimpleName(),
-                "receiver=" + receiver.getClass().getName(),
-                "termination trap seccomp shield installed after attach",
-                "handled",
-                false,
-                false,
-                false);
+                + receiverClassName);
+        recordAttachResult(receiverClassName,
+                "termination trap seccomp shield installed after attach");
         return true;
     }
 
@@ -117,21 +102,27 @@ public class ApplicationAttachSeccompProxy implements IInjectHook {
         if (!rawSyscallProbeInstalled.compareAndSet(false, true)) {
             return true;
         }
+        String receiverClassName = receiver.getClass().getName();
         NativeCore.installRawSyscallTerminationProbe();
         Slog.d(TAG, "raw syscall termination probe installed after Application.attach for "
-                + receiver.getClass().getName());
+                + receiverClassName);
+        recordAttachResult(receiverClassName,
+                "raw syscall termination probe installed after attach");
+        return true;
+    }
+
+    private static void recordAttachResult(String receiverClassName, String resultSummary) {
         BlackBoxBinderMonitor.recordProxyCall(
                 SECCOMP_SERVICE,
                 "android.app.Application",
                 "attach",
                 ApplicationAttachSeccompProxy.class.getSimpleName(),
-                "receiver=" + receiver.getClass().getName(),
-                "raw syscall termination probe installed after attach",
+                "receiver=" + receiverClassName,
+                resultSummary,
                 "handled",
                 false,
                 false,
                 false);
-        return true;
     }
 
     private static boolean shouldInstallFor(Object receiver) {
@@ -158,42 +149,42 @@ public class ApplicationAttachSeccompProxy implements IInjectHook {
     }
 
     static boolean isAttachSeccompEnabled() {
-        return isTruthy(System.getenv(ATTACH_SECCOMP_ENV))
-                || isTruthy(System.getProperty(ATTACH_SECCOMP_PROPERTY))
-                || isTruthy(getAndroidSystemProperty(ATTACH_SECCOMP_SYSTEM_PROPERTY));
+        return isAnyDiagnosticSwitchEnabled(
+                ATTACH_SECCOMP_ENV,
+                ATTACH_SECCOMP_PROPERTY,
+                ATTACH_SECCOMP_SYSTEM_PROPERTY);
     }
 
     static boolean isAttachTerminationTrapEnabled() {
-        return isTruthy(System.getenv(ATTACH_TERMINATION_TRAP_ENV))
-                || isTruthy(System.getProperty(ATTACH_TERMINATION_TRAP_PROPERTY))
-                || isTruthy(getAndroidSystemProperty(ATTACH_TERMINATION_TRAP_SYSTEM_PROPERTY));
+        return isAnyDiagnosticSwitchEnabled(
+                ATTACH_TERMINATION_TRAP_ENV,
+                ATTACH_TERMINATION_TRAP_PROPERTY,
+                ATTACH_TERMINATION_TRAP_SYSTEM_PROPERTY);
     }
 
     static boolean isAttachRawSyscallProbeEnabled() {
-        return isTruthy(System.getenv(ATTACH_RAW_SYSCALL_PROBE_ENV))
-                || isTruthy(System.getProperty(ATTACH_RAW_SYSCALL_PROBE_PROPERTY))
-                || isTruthy(getAndroidSystemProperty(ATTACH_RAW_SYSCALL_PROBE_SYSTEM_PROPERTY));
+        return isAnyDiagnosticSwitchEnabled(
+                ATTACH_RAW_SYSCALL_PROBE_ENV,
+                ATTACH_RAW_SYSCALL_PROBE_PROPERTY,
+                ATTACH_RAW_SYSCALL_PROBE_SYSTEM_PROPERTY);
+    }
+
+    private static boolean isAnyDiagnosticSwitchEnabled(String envKey,
+                                                        String javaPropertyKey,
+                                                        String systemPropertyKey) {
+        return DiagnosticSwitch.isTruthy(System.getenv(envKey))
+                || DiagnosticSwitch.isTruthy(System.getProperty(javaPropertyKey))
+                || DiagnosticSwitch.isTruthy(getAndroidSystemProperty(systemPropertyKey));
     }
 
     private static String getAndroidSystemProperty(String key) {
         try {
-            Class<?> systemProperties = Class.forName("android.os.SystemProperties");
+            Class<?> systemProperties = Class.forName(SYSTEM_PROPERTIES_CLASS);
             Method get = systemProperties.getDeclaredMethod("get", String.class);
             Object value = get.invoke(null, key);
             return value instanceof String ? (String) value : null;
         } catch (Throwable ignored) {
             return null;
         }
-    }
-
-    private static boolean isTruthy(String value) {
-        if (value == null) {
-            return false;
-        }
-        String normalized = value.trim();
-        return "1".equals(normalized)
-                || "true".equalsIgnoreCase(normalized)
-                || "yes".equalsIgnoreCase(normalized)
-                || "on".equalsIgnoreCase(normalized);
     }
 }

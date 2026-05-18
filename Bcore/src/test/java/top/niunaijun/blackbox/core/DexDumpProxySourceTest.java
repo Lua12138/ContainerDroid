@@ -2,13 +2,9 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class DexDumpProxySourceTest {
 
@@ -45,16 +41,10 @@ public class DexDumpProxySourceTest {
                 proxy.contains("dumpClassLoader((ClassLoader) callFrame.thisObject")
                         || proxy.contains("dumpDexFile((DexFile) callFrame.thisObject")
                         || proxy.contains("dumpStringPathArgs(callFrame.args"));
-    }
-
-    private static String readSource(String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
+        assertFalse("DexDumpProxy should not keep unused synchronous dump helpers after all hook paths schedule async work",
+                proxy.contains("private static void dumpClassLoader(")
+                        || proxy.contains("private static void dumpDexFile(DexFile dexFile, String sourceTag)")
+                        || proxy.contains("private static void dumpStringPathArgs(")
+                        || proxy.contains("private static void dumpByteBufferArgs("));
     }
 }

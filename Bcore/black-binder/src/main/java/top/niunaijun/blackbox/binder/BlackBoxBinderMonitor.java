@@ -25,6 +25,7 @@ public final class BlackBoxBinderMonitor {
     private static final String SOURCE_TRANSACT = "Pine.BinderProxy.transact";
     private static final String SOURCE_NATIVE_TRANSACT = "Native.BpBinder.transact";
     private static final String SOURCE_IOCTL = "Native.ioctl.BINDER_WRITE_READ";
+    private static final String BINDER_PROXY_CLASS = "android.os.BinderProxy";
     private static final long NATIVE_DEDUP_WINDOW_NS = 5_000_000L;
     private static final int CRASH_CONTEXT_MAX_EVENTS = 100;
     private static final Object LOCK = new Object();
@@ -59,7 +60,7 @@ public final class BlackBoxBinderMonitor {
             eventSink.close();
             eventSink = createSink(context, config);
 
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logInfo("Binder monitor init:"
                         + " enabled=" + config.isEnabled()
                         + " recordProxy=" + config.isRecordProxy()
@@ -74,7 +75,7 @@ public final class BlackBoxBinderMonitor {
                         + " virtualProcess=" + identity.getVirtualProcess());
             }
             if (!config.isEnabled()) {
-                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                if (shouldLogcat()) {
                     logInfo("Binder monitor disabled by config; hooks not installed");
                 }
                 return;
@@ -90,23 +91,7 @@ public final class BlackBoxBinderMonitor {
     }
 
     public static void setEnabled(boolean enabled) {
-        BinderMonitorConfig old = config;
-        config = new BinderMonitorConfig(
-                enabled,
-                old.getPackages(),
-                old.isRecordStack(),
-                old.isRecordProxy(),
-                old.isRecordNative(),
-                old.isRecordIoctl(),
-                old.getWatchDescriptors(),
-                old.getProcesses(),
-                old.getWatchMethods(),
-                old.getWatchCodes(),
-                old.getWatchFlags(),
-                old.getWatchThreads(),
-                old.getMaxRingEvents(),
-                old.getOutput(),
-                old.isLogcat());
+        config = config.withEnabled(enabled);
     }
 
     public static boolean isEnabled() {
@@ -258,7 +243,7 @@ public final class BlackBoxBinderMonitor {
         try {
             mapping.registerJsonFile(file);
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("load binder method map failed: " + file, e);
             }
         }
@@ -266,7 +251,7 @@ public final class BlackBoxBinderMonitor {
 
     private static void installHooksLocked() {
         if (hooksInstalled) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logInfo("Binder monitor hooks already installed");
             }
             return;
@@ -277,7 +262,7 @@ public final class BlackBoxBinderMonitor {
         boolean binderProxyGetInterfaceDescriptor = hookBinderProxyGetInterfaceDescriptor();
         hooksInstalled = writeInterfaceToken || parcelRecycle
                 || binderProxyTransact || binderProxyGetInterfaceDescriptor;
-        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+        if (shouldLogcat()) {
             logInfo("Binder monitor hook install summary:"
                     + " hooksInstalled=" + hooksInstalled
                     + " writeInterfaceToken=" + writeInterfaceToken
@@ -304,7 +289,7 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("hook Parcel.writeInterfaceToken failed", e);
             }
             return false;
@@ -322,7 +307,7 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("hook Parcel.recycle failed", e);
             }
             return false;
@@ -331,7 +316,7 @@ public final class BlackBoxBinderMonitor {
 
     private static boolean hookBinderProxyTransact() {
         try {
-            Class<?> binderProxy = Class.forName("android.os.BinderProxy");
+            Class<?> binderProxy = Class.forName(BINDER_PROXY_CLASS);
             Method method = binderProxy.getDeclaredMethod("transact",
                     int.class, Parcel.class, Parcel.class, int.class);
             method.setAccessible(true);
@@ -345,7 +330,7 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("hook BinderProxy.transact failed", e);
             }
             return false;
@@ -354,7 +339,7 @@ public final class BlackBoxBinderMonitor {
 
     private static boolean hookBinderProxyGetInterfaceDescriptor() {
         try {
-            Class<?> binderProxy = Class.forName("android.os.BinderProxy");
+            Class<?> binderProxy = Class.forName(BINDER_PROXY_CLASS);
             Method method = binderProxy.getDeclaredMethod("getInterfaceDescriptor");
             method.setAccessible(true);
             Pine.hook(method, new MethodHook() {
@@ -368,7 +353,7 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("hook BinderProxy.getInterfaceDescriptor failed", e);
             }
             return false;
@@ -421,7 +406,7 @@ public final class BlackBoxBinderMonitor {
             return interceptor.onTransact(binderProxy, code, data, reply, flags, descriptor, method,
                     argsSummary);
         } catch (Throwable e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("binder transact interceptor failed", e);
             }
             return false;
@@ -596,21 +581,12 @@ public final class BlackBoxBinderMonitor {
             return;
         }
         File file = new File(directory, "crash_context_" + Process.myPid() + "_" + now() + ".json");
-        FileWriter writer = null;
-        try {
-            writer = new FileWriter(file, false);
+        try (FileWriter writer = new FileWriter(file, false)) {
             writer.write(json);
             writer.write('\n');
         } catch (IOException e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 logWarn("write crash context failed", e);
-            }
-        } finally {
-            if (writer != null) {
-                try {
-                    writer.close();
-                } catch (IOException ignored) {
-                }
             }
         }
     }

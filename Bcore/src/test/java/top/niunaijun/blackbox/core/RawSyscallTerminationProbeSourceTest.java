@@ -2,22 +2,17 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetweenOrTail;
 
 public class RawSyscallTerminationProbeSourceTest {
-    private static final Path ROOT = Paths.get(System.getProperty("user.dir")).getParent();
-
     @Test
     public void rawSyscallTerminationProbeIsExplicitGenericAttachDiagnostic() throws Exception {
-        String nativeCore = read("Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java");
-        String boxCore = read("Bcore/src/main/cpp/BoxCore.cpp");
-        String attachProxy = read("Bcore/src/main/java/top/niunaijun/blackbox/fake/service/ApplicationAttachSeccompProxy.java");
+        String nativeCore = readSource("Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java");
+        String boxCore = readSource("Bcore/src/main/cpp/BoxCore.cpp");
+        String attachProxy = readSource("Bcore/src/main/java/top/niunaijun/blackbox/fake/service/ApplicationAttachSeccompProxy.java");
 
         assertTrue(nativeCore.contains("installRawSyscallTerminationProbe"));
         assertTrue(boxCore.contains("installRawSyscallTerminationProbe"));
@@ -31,7 +26,7 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallTerminationProbeCapturesDirectArmSvcTerminationWithoutSeccomp() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue(source.contains("SIGTRAP"));
         assertTrue(source.contains("bkpt"));
@@ -59,7 +54,7 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallProbeDoesNotRouteSignalHandlerEmulationThroughInterposedSyscall() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue("non-termination SVC emulation should use a private raw kernel syscall helper",
                 source.contains("rawKernelSyscall6"));
@@ -81,7 +76,7 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallProbeCanDiagnoseAnonymousLoaderCodeWithoutEmulatingEverySyscall() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue("protected loaders can place raw syscall stubs in executable anonymous bss maps",
                 source.contains("isPatchableAnonymousExecutableMap")
@@ -101,7 +96,7 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallProbeRateLimitsBenignSyscallTelemetry() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue("benign syscall traps should be counted per patched SVC site",
                 source.contains("non_termination_count"));
@@ -116,8 +111,8 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawExitSyscallTrapDoesNotFallThroughIntoBionicFatalTrap() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
-        String handler = sliceBetween(source,
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String handler = sliceBetweenOrTail(source,
                 "static void sigtrapHandler",
                 "static int protFromPerms");
 
@@ -133,7 +128,7 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallProbeRedirectsDirectArmSvcFileSyscallsThroughIoCore() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue("direct ARM SVC open paths must pass through the same IOCore relocation rules as libc/syscall wrappers",
                 source.contains("#include \"IO.h\"")
@@ -162,14 +157,14 @@ public class RawSyscallTerminationProbeSourceTest {
 
     @Test
     public void rawSyscallRuntimeRefreshAvoidsFileBackedAppTextIntegritySurface() throws Exception {
-        String source = read("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
-        String shouldScanPath = sliceBetween(source,
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String shouldScanPath = sliceBetweenOrTail(source,
                 "static bool shouldScanPath(",
                 "static bool isPatchableAnonymousExecutableMap");
-        String install = sliceBetween(source,
+        String install = sliceBetweenOrTail(source,
                 "void installRawSyscallTerminationProbe()",
                 "void refreshRawSyscallProbeMaps()");
-        String refresh = sliceBetween(source,
+        String refresh = sliceBetweenOrTail(source,
                 "void refreshRawSyscallProbeMaps()",
                 "} // namespace rawsyscall");
 
@@ -190,19 +185,4 @@ public class RawSyscallTerminationProbeSourceTest {
                         || source.contains("jiagu"));
     }
 
-    private static String read(String relative) throws Exception {
-        return new String(Files.readAllBytes(ROOT.resolve(relative)), StandardCharsets.UTF_8);
-    }
-
-    private static String sliceBetween(String source, String startMarker, String endMarker) {
-        int start = source.indexOf(startMarker);
-        if (start < 0) {
-            return "";
-        }
-        int end = source.indexOf(endMarker, start + startMarker.length());
-        if (end < 0) {
-            return source.substring(start);
-        }
-        return source.substring(start, end);
-    }
 }

@@ -1,5 +1,6 @@
 #include "JniDiagnosticsHook.h"
 #include "Log.h"
+#include "Utils/NativeProperty.h"
 
 #include <cinttypes>
 #include <cstdio>
@@ -8,7 +9,6 @@
 #include <dlfcn.h>
 #include <sstream>
 #include <string>
-#include <sys/system_properties.h>
 #include <vector>
 
 namespace {
@@ -36,29 +36,11 @@ bool clearPendingException(JNIEnv *env) {
 }
 
 bool isDetailedFieldDiagnosticsEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    int length = __system_property_get("debug.blackbox.jni_field_details", value);
-    if (length <= 0) {
-        return false;
-    }
-    return std::strcmp(value, "1") == 0
-           || std::strcmp(value, "true") == 0
-           || std::strcmp(value, "TRUE") == 0
-           || std::strcmp(value, "yes") == 0
-           || std::strcmp(value, "on") == 0;
+    return blackbox::native_property::getBoolJniDiagnostic("debug.blackbox.jni_field_details");
 }
 
 bool isFieldDiagnosticsEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    int length = __system_property_get("debug.blackbox.jni_field_diag", value);
-    if (length <= 0) {
-        return false;
-    }
-    return std::strcmp(value, "1") == 0
-           || std::strcmp(value, "true") == 0
-           || std::strcmp(value, "TRUE") == 0
-           || std::strcmp(value, "yes") == 0
-           || std::strcmp(value, "on") == 0;
+    return blackbox::native_property::getBoolJniDiagnostic("debug.blackbox.jni_field_diag");
 }
 
 std::string jstringToString(JNIEnv *env, jstring value) {

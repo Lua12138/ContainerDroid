@@ -12,12 +12,13 @@ import top.niunaijun.blackbox.utils.Slog;
 public class ActivityThreadIdentityProxy implements IInjectHook {
     private static final String TAG = "ActivityThreadIdentityProxy";
     private static final String ACTIVITY_THREAD = "activity_thread";
+    private static final String ACTIVITY_THREAD_CLASS = "android.app.ActivityThread";
     private static final String ACTIVITY_THREAD_DESCRIPTOR = "android.app.ActivityThread";
 
     @Override
     public void injectHook() {
         try {
-            Class<?> activityThread = Class.forName("android.app.ActivityThread");
+            Class<?> activityThread = Class.forName(ACTIVITY_THREAD_CLASS);
             hookIdentityMethod(activityThread, "currentPackageName");
             hookIdentityMethod(activityThread, "currentProcessName");
             hookIdentityMethod(activityThread, "currentOpPackageName");

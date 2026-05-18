@@ -2,12 +2,8 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class ContextDataDirProxySourceTest {
 
@@ -17,7 +13,8 @@ public class ContextDataDirProxySourceTest {
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/ContextDataDirProxy.java");
 
         assertTrue(source.contains("implements IInjectHook"));
-        assertTrue(source.contains("Class.forName(\"android.app.ContextImpl\")"));
+        assertTrue(source.contains("CONTEXT_IMPL = \"android.app.ContextImpl\""));
+        assertTrue(source.contains("Class.forName(CONTEXT_IMPL)"));
         assertTrue(source.contains("\"getDataDir\""));
         assertTrue(source.contains("\"getFilesDir\""));
         assertTrue(source.contains("\"getCacheDir\""));
@@ -41,7 +38,7 @@ public class ContextDataDirProxySourceTest {
         assertTrue("Virtual package contexts should still expose normal /data/user paths",
                 source.contains("virtualPackage.equals(basePackageName)")
                         && source.contains("virtualPackage.equals(opPackageName)")
-                        && source.contains("virtualPackage.equals(((Context) context).getPackageName())"));
+                        && source.contains("virtualPackage.equals(packageName)"));
     }
 
     @Test
@@ -53,16 +50,5 @@ public class ContextDataDirProxySourceTest {
         assertTrue(source.contains("addInjector(new ContextDataDirProxy())"));
         assertTrue(source.indexOf("addInjector(new ContextDataDirProxy())")
                 < source.indexOf("addInjector(new IPackageManagerProxy())"));
-    }
-
-    private static String readSource(String relativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(relativePath + " not found from " + current);
     }
 }

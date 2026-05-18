@@ -2,15 +2,12 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class JniDiagnosticsHookSourceTest {
     private static final List<String> FORBIDDEN_TARGET_MARKERS = Arrays.asList(
@@ -81,12 +78,12 @@ public class JniDiagnosticsHookSourceTest {
 
         assertTrue("JNI field diagnostics table replacement should be disabled unless explicitly requested",
                 source.contains("isFieldDiagnosticsEnabled()")
-                        && source.contains("__system_property_get(\"debug.blackbox.jni_field_diag\"")
+                        && source.contains("native_property::getBoolJniDiagnostic(\"debug.blackbox.jni_field_diag\"")
                         && source.contains("if (!isFieldDiagnosticsEnabled())")
                         && source.contains("JNI diagnostics disabled by debug property"));
         assertTrue("Reflection-heavy field metadata should be behind an explicit debug property",
                 source.contains("isDetailedFieldDiagnosticsEnabled()")
-                        && source.contains("__system_property_get(\"debug.blackbox.jni_field_details\""));
+                        && source.contains("native_property::getBoolJniDiagnostic(\"debug.blackbox.jni_field_details\""));
         assertTrue("Default failed-lookup log should still be lightweight",
                 source.contains("const bool detailed = isDetailedFieldDiagnosticsEnabled();")
                         && source.contains("detailed ? describeClassLoader(env, clazz) : \"disabled\"")
@@ -103,14 +100,4 @@ public class JniDiagnosticsHookSourceTest {
         }
     }
 
-    private static String readSource(String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
 }

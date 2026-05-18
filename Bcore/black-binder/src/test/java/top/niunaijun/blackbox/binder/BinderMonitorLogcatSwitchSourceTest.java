@@ -2,12 +2,8 @@ package top.niunaijun.blackbox.binder;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.binder.SourceAssertions.readSource;
 
 public class BinderMonitorLogcatSwitchSourceTest {
 
@@ -39,17 +35,8 @@ public class BinderMonitorLogcatSwitchSourceTest {
                         && !monitor.contains("Log.i(TAG, \"Binder monitor init:\""));
         assertTrue("The JSONL event sink should not emit BlackBoxBinderMonitor logcat records when logcat is disabled",
                 sink.contains("private boolean shouldLogcat()")
-                        && sink.contains("BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()"));
+                        && sink.contains("return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && logcat;")
+                        && sink.contains("if (shouldLogcat())"));
     }
 
-    private static String readSource(String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
 }

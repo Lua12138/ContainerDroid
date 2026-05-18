@@ -1,4 +1,5 @@
 #include "SeccompShield.h"
+#include "Utils/NativeProperty.h"
 
 #include <android/log.h>
 #include <dirent.h>
@@ -175,6 +176,11 @@ struct TrapEvent {
 
 static TrapEvent gTrapEvents[kMaxTrapEvents];
 
+template <size_t N>
+static unsigned short filterLength(const struct sock_filter (&)[N]) {
+    return static_cast<unsigned short>(N);
+}
+
 static bool isProcessExitSyscall(int sysno) {
     return sysno == kSysExit || sysno == kSysExitGroup;
 }
@@ -280,24 +286,47 @@ static bool isSignalBlockedInMask(unsigned long long mask, int signo) {
     return (mask & (1ULL << (signo - 1))) != 0;
 }
 
-static bool parseSigBlkMask(const char *status, unsigned long long *mask) {
-    const char *line = strstr(status, "\nSigBlk:");
-    if (line == nullptr) {
-        if (strncmp(status, "SigBlk:", 7) != 0) {
-            return false;
-        }
-        line = status;
-    } else {
-        line += 1;
+static const char *findStatusLine(const char *status, const char *name) {
+    if (status == nullptr || name == nullptr) {
+        return nullptr;
     }
+    const char *line = strstr(status, name);
+    while (line != nullptr) {
+        if (line == status || line[-1] == '\n') {
+            return line;
+        }
+        line = strstr(line + 1, name);
+    }
+    return nullptr;
+}
 
+static const char *findFirstStatusLineMatch(const char *status, const char *name) {
+    if (status == nullptr || name == nullptr) {
+        return nullptr;
+    }
+    const char *line = strstr(status, name);
+    if (line == nullptr || (line != status && line[-1] != '\n')) {
+        return nullptr;
+    }
+    return line;
+}
+
+static const char *valueAfterColon(const char *line) {
     const char *value = strchr(line, ':');
     if (value == nullptr) {
-        return false;
+        return nullptr;
     }
     ++value;
     while (*value == ' ' || *value == '\t') {
         ++value;
+    }
+    return value;
+}
+
+static bool parseHexSignalMaskValue(const char *line, unsigned long long *mask) {
+    const char *value = valueAfterColon(line);
+    if (value == nullptr) {
+        return false;
     }
 
     errno = 0;
@@ -308,55 +337,32 @@ static bool parseSigBlkMask(const char *status, unsigned long long *mask) {
     }
     *mask = parsed;
     return true;
+}
+
+static bool parseSigBlkMask(const char *status, unsigned long long *mask) {
+    const char *line = findStatusLine(status, "SigBlk:");
+    if (line == nullptr) {
+        return false;
+    }
+    return parseHexSignalMaskValue(line, mask);
 }
 
 static bool parseNamedSignalMask(const char *status, const char *name, unsigned long long *mask) {
-    const size_t name_len = strlen(name);
-    const char *line = strstr(status, name);
+    const char *line = findFirstStatusLineMatch(status, name);
     if (line == nullptr) {
         return false;
     }
-    if (line != status && line[-1] != '\n') {
-        return false;
-    }
-
-    const char *value = strchr(line, ':');
-    if (value == nullptr) {
-        return false;
-    }
-    ++value;
-    while (*value == ' ' || *value == '\t') {
-        ++value;
-    }
-
-    errno = 0;
-    char *end = nullptr;
-    unsigned long long parsed = strtoull(value, &end, 16);
-    if (end == value || errno != 0) {
-        return false;
-    }
-    *mask = parsed;
-    return true;
+    return parseHexSignalMaskValue(line, mask);
 }
 
 static bool parseTracerPid(const char *status, pid_t *tracer_pid) {
-    const char *line = strstr(status, "\nTracerPid:");
+    const char *line = findStatusLine(status, "TracerPid:");
     if (line == nullptr) {
-        if (strncmp(status, "TracerPid:", 10) != 0) {
-            return false;
-        }
-        line = status;
-    } else {
-        line += 1;
-    }
-
-    const char *value = strchr(line, ':');
-    if (value == nullptr) {
         return false;
     }
-    ++value;
-    while (*value == ' ' || *value == '\t') {
-        ++value;
+    const char *value = valueAfterColon(line);
+    if (value == nullptr) {
+        return false;
     }
 
     errno = 0;
@@ -369,9 +375,11 @@ static bool parseTracerPid(const char *status, pid_t *tracer_pid) {
     return true;
 }
 
-static bool readThreadStatus(pid_t tid, char *buffer, size_t buffer_size) {
-    char path[64];
-    snprintf(path, sizeof(path), "/proc/self/task/%d/status", tid);
+static bool readStatusFile(const char *path, char *buffer, size_t buffer_size) {
+    if (path == nullptr || buffer == nullptr || buffer_size == 0) {
+        return false;
+    }
+
     int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
         return false;
@@ -387,20 +395,14 @@ static bool readThreadStatus(pid_t tid, char *buffer, size_t buffer_size) {
     return true;
 }
 
+static bool readThreadStatus(pid_t tid, char *buffer, size_t buffer_size) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/self/task/%d/status", tid);
+    return readStatusFile(path, buffer, buffer_size);
+}
+
 static bool readProcessStatus(char *buffer, size_t buffer_size) {
-    int fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
-        return false;
-    }
-
-    ssize_t bytes = read(fd, buffer, buffer_size - 1);
-    close(fd);
-    if (bytes <= 0) {
-        return false;
-    }
-
-    buffer[bytes] = '\0';
-    return true;
+    return readStatusFile("/proc/self/status", buffer, buffer_size);
 }
 
 static void scanTracerPid() {
@@ -477,6 +479,25 @@ static void noteThreadSigsysMask(pid_t tid, bool blocked, unsigned long long mas
                         tid, blocked ? 1 : 0, mask);
 }
 
+static bool parsePositiveTid(const char *name, pid_t *tid) {
+    char *end = nullptr;
+    long tid_long = strtol(name, &end, 10);
+    if (end == name || *end != '\0' || tid_long <= 0) {
+        return false;
+    }
+    *tid = static_cast<pid_t>(tid_long);
+    return true;
+}
+
+static bool hasSeenTid(const pid_t *seen_tids, size_t seen_count, pid_t tid) {
+    for (size_t i = 0; i < seen_count; ++i) {
+        if (seen_tids[i] == tid) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void scanThreadSignalMasks() {
     DIR *dir = opendir("/proc/self/task");
     if (dir == nullptr) {
@@ -491,13 +512,11 @@ static void scanThreadSignalMasks() {
         if (entry->d_name[0] == '.') {
             continue;
         }
-        char *end = nullptr;
-        long tid_long = strtol(entry->d_name, &end, 10);
-        if (end == entry->d_name || *end != '\0' || tid_long <= 0) {
+        pid_t tid = 0;
+        if (!parsePositiveTid(entry->d_name, &tid)) {
             continue;
         }
 
-        pid_t tid = static_cast<pid_t>(tid_long);
         if (!readThreadStatus(tid, status, sizeof(status))) {
             continue;
         }
@@ -518,14 +537,7 @@ static void scanThreadSignalMasks() {
         if (gThreadMaskStates[i].tid == 0) {
             continue;
         }
-        bool found = false;
-        for (size_t j = 0; j < seen_count; ++j) {
-            if (seen_tids[j] == gThreadMaskStates[i].tid) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
+        if (!hasSeenTid(seen_tids, seen_count, gThreadMaskStates[i].tid)) {
             gThreadMaskStates[i].tid = 0;
             gThreadMaskStates[i].blocked = false;
         }
@@ -658,6 +670,19 @@ static _Unwind_Reason_Code unwindCallback(struct _Unwind_Context *context, void 
     return _URC_NO_REASON;
 }
 
+static uintptr_t siginfoCallAddress(const siginfo_t *info) {
+    return reinterpret_cast<uintptr_t>(info != nullptr ? info->si_call_addr : nullptr);
+}
+
+static void fillTrapEventCommon(TrapEvent *event, const siginfo_t *info) {
+    event->pid = getpid();
+    event->tid = static_cast<pid_t>(getThreadId());
+    event->si_code = info != nullptr ? info->si_code : 0;
+    event->si_errno = info != nullptr ? info->si_errno : 0;
+    event->trap_call_addr = siginfoCallAddress(info);
+    event->frame_count = 0;
+}
+
 #if defined(__aarch64__)
 static int getSyscallNumber(const ucontext_t *context) {
     return static_cast<int>(context->uc_mcontext.regs[8]);
@@ -685,12 +710,8 @@ static void emulateBlockedProcessExitReturn(ucontext_t *context) {
 
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
     const mcontext_t &mc = context->uc_mcontext;
-    event->pid = getpid();
-    event->tid = static_cast<pid_t>(getThreadId());
+    fillTrapEventCommon(event, info);
     event->sysno = static_cast<int>(mc.regs[8]);
-    event->si_code = info != nullptr ? info->si_code : 0;
-    event->si_errno = info != nullptr ? info->si_errno : 0;
-    event->trap_call_addr = reinterpret_cast<uintptr_t>(info != nullptr ? info->si_call_addr : nullptr);
     event->pc = static_cast<uintptr_t>(mc.pc);
     event->sp = static_cast<uintptr_t>(mc.sp);
     event->lr = static_cast<uintptr_t>(mc.regs[30]);
@@ -703,7 +724,6 @@ static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontex
     event->regs[5] = static_cast<uintptr_t>(mc.regs[5]);
     event->regs[6] = static_cast<uintptr_t>(mc.regs[6]);
     event->regs[7] = static_cast<uintptr_t>(mc.regs[8]);
-    event->frame_count = 0;
     event->flags = 0;
 }
 
@@ -749,12 +769,8 @@ static void emulateBlockedProcessExitReturn(ucontext_t *context) {
 
 static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontext_t *context) {
     const mcontext_t &mc = context->uc_mcontext;
-    event->pid = getpid();
-    event->tid = static_cast<pid_t>(getThreadId());
+    fillTrapEventCommon(event, info);
     event->sysno = static_cast<int>(mc.arm_r7);
-    event->si_code = info != nullptr ? info->si_code : 0;
-    event->si_errno = info != nullptr ? info->si_errno : 0;
-    event->trap_call_addr = reinterpret_cast<uintptr_t>(info != nullptr ? info->si_call_addr : nullptr);
     event->pc = static_cast<uintptr_t>(mc.arm_pc);
     event->sp = static_cast<uintptr_t>(mc.arm_sp);
     event->lr = static_cast<uintptr_t>(mc.arm_lr);
@@ -767,7 +783,6 @@ static void fillTrapEvent(TrapEvent *event, const siginfo_t *info, const ucontex
     event->regs[5] = static_cast<uintptr_t>(mc.arm_r5);
     event->regs[6] = static_cast<uintptr_t>(mc.arm_r6);
     event->regs[7] = static_cast<uintptr_t>(mc.arm_r7);
-    event->frame_count = 0;
     event->flags = static_cast<uint32_t>(mc.arm_cpsr);
 }
 
@@ -1068,13 +1083,7 @@ static void *sigsysWatchdogMain(void *) {
 }
 
 static bool isSigsysWatchdogDiagnosticsEnabled() {
-    const char *value = getenv("BLACKBOX_SECCOMP_WATCHDOG");
-    return value != nullptr
-           && (strcmp(value, "1") == 0
-               || strcmp(value, "true") == 0
-               || strcmp(value, "TRUE") == 0
-               || strcmp(value, "yes") == 0
-               || strcmp(value, "YES") == 0);
+    return blackbox::native_property::isTruthySeccompWatchdog(getenv("BLACKBOX_SECCOMP_WATCHDOG"));
 }
 
 static bool ensureSigsysWatchdogStarted() {
@@ -1306,7 +1315,7 @@ static bool installFilter() {
     };
 
     struct sock_fprog program = {};
-    program.len = static_cast<unsigned short>(sizeof(filter) / sizeof(filter[0]));
+    program.len = filterLength(filter);
     program.filter = filter;
 
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
@@ -1405,7 +1414,7 @@ static bool installTerminationOnlyFilter() {
     };
 
     struct sock_fprog program = {};
-    program.len = static_cast<unsigned short>(sizeof(filter) / sizeof(filter[0]));
+    program.len = filterLength(filter);
     program.filter = filter;
 
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
@@ -1536,7 +1545,7 @@ static bool installTerminationTrapFilter() {
     };
 
     struct sock_fprog program = {};
-    program.len = static_cast<unsigned short>(sizeof(filter) / sizeof(filter[0]));
+    program.len = filterLength(filter);
     program.filter = filter;
 
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {

@@ -18,6 +18,7 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 
@@ -155,16 +156,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static boolean isDexLoadSeccompDiagnosticsEnabled() {
-        return isTruthy(System.getenv(DEXLOAD_SECCOMP_ENV))
-                || isTruthy(System.getProperty("blackbox.dexload_seccomp"))
-                || isTruthy(SystemPropertiesCompat.get(DEXLOAD_SECCOMP_PROPERTY));
-    }
-
-    private static boolean isTruthy(String value) {
-        return "1".equals(value)
-                || "true".equalsIgnoreCase(value)
-                || "yes".equalsIgnoreCase(value)
-                || "on".equalsIgnoreCase(value);
+        return DiagnosticSwitch.isTruthyExact(System.getenv(DEXLOAD_SECCOMP_ENV))
+                || DiagnosticSwitch.isTruthyExact(System.getProperty("blackbox.dexload_seccomp"))
+                || DiagnosticSwitch.isTruthyExact(SystemPropertiesCompat.get(DEXLOAD_SECCOMP_PROPERTY));
     }
 
     private static void recordDexLoadSeccompInstall(String packageName, String sourceTag,
@@ -199,32 +193,6 @@ public class DexDumpProxy implements IInjectHook {
                 }
             }
         });
-    }
-
-    private static void dumpClassLoader(ClassLoader classLoader, String sourceTag) {
-        if (!isDexDumpEnabled()) {
-            return;
-        }
-        String packageName = currentPackageName();
-        if (packageName == null || classLoader == null) {
-            return;
-        }
-        try {
-            NativeCore.dumpDex((ClassLoader) classLoader, packageName);
-        } catch (Throwable e) {
-            Slog.d(TAG, "dump class loader failed: " + sourceTag + " " + e);
-        }
-    }
-
-    private static void dumpDexFile(DexFile dexFile, String sourceTag) {
-        if (!isDexDumpEnabled()) {
-            return;
-        }
-        String packageName = currentPackageName();
-        if (packageName == null || dexFile == null) {
-            return;
-        }
-        dumpDexFileForPackage(dexFile, packageName, sourceTag);
     }
 
     private static void scheduleDexFileDump(final DexFile dexFile, final String sourceTag) {
@@ -299,21 +267,6 @@ public class DexDumpProxy implements IInjectHook {
         }
     }
 
-    private static void dumpStringPathArgs(Object[] args, String sourceTag) {
-        if (!isDexDumpEnabled()) {
-            return;
-        }
-        String packageName = currentPackageName();
-        if (packageName == null || args == null) {
-            return;
-        }
-        for (Object arg : args) {
-            if (arg instanceof String) {
-                dumpDexPathList((String) arg, packageName, sourceTag);
-            }
-        }
-    }
-
     private static void dumpDexPathList(String value, String packageName, String sourceTag) {
         if (!isDexDumpEnabled()) {
             return;
@@ -363,23 +316,6 @@ public class DexDumpProxy implements IInjectHook {
                 NativeCore.dumpDexByteBuffers(buffers.toArray(new ByteBuffer[0]), packageName, sourceTag);
             }
         });
-    }
-
-    private static void dumpByteBufferArgs(Object[] args, String sourceTag) {
-        if (!isDexDumpEnabled()) {
-            return;
-        }
-        String packageName = currentPackageName();
-        if (packageName == null || args == null) {
-            return;
-        }
-        for (Object arg : args) {
-            if (arg instanceof ByteBuffer) {
-                NativeCore.dumpDexByteBuffers(new ByteBuffer[]{(ByteBuffer) arg}, packageName, sourceTag);
-            } else if (arg instanceof ByteBuffer[]) {
-                NativeCore.dumpDexByteBuffers((ByteBuffer[]) arg, packageName, sourceTag);
-            }
-        }
     }
 
     private static boolean isDexDumpEnabled() {

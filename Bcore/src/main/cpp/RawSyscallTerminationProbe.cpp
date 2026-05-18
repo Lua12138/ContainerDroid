@@ -320,6 +320,21 @@ static bool shouldLogNonTerminationTrap(PatchEntry *entry) {
     return count <= 3 || (count & (count - 1)) == 0;
 }
 
+static const char *pathOrEmpty(const char *path) {
+    return path == nullptr ? "" : path;
+}
+
+static uintptr_t fileOffsetForAddress(const PatchEntry &entry, uintptr_t address) {
+    if (address < entry.map_start || address >= entry.map_end) {
+        return 0;
+    }
+    return entry.map_offset + (address - entry.map_start);
+}
+
+static uintptr_t patchedInstructionFileOffset(const PatchEntry &entry) {
+    return entry.map_offset + (entry.address - entry.map_start);
+}
+
 static PatchEntry *findPatch(uintptr_t pc, uintptr_t fault_address) {
     const int count = gPatchCount;
     for (int i = 0; i < count; i++) {
@@ -386,12 +401,9 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
 
     const int sysno = static_cast<int>(mc.arm_r7);
     if (isTerminationSyscall(sysno, mc)) {
-        uintptr_t pc_file_offset = entry->map_offset + (entry->address - entry->map_start);
-        uintptr_t lr_file_offset = 0;
-        uintptr_t lr = static_cast<uintptr_t>(mc.arm_lr);
-        if (lr >= entry->map_start && lr < entry->map_end) {
-            lr_file_offset = entry->map_offset + (lr - entry->map_start);
-        }
+        const uintptr_t pc_file_offset = patchedInstructionFileOffset(*entry);
+        const uintptr_t lr = static_cast<uintptr_t>(mc.arm_lr);
+        const uintptr_t lr_file_offset = fileOffsetForAddress(*entry, lr);
         __android_log_print(ANDROID_LOG_ERROR, kTag,
                             "raw syscall termination intercepted sys=%s(%d) pc=0x%" PRIxPTR
                             " lr=0x%lx sp=0x%lx r0=0x%lx r1=0x%lx r2=0x%lx r7=0x%lx"
@@ -441,23 +453,23 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                                     entry->map_start,
                                     entry->map_end,
                                     entry->map_offset,
-                                    entry->map_offset + (entry->address - entry->map_start),
+                                    patchedInstructionFileOffset(*entry),
                                     entry->path);
             } else {
-            __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                                "raw syscall non-termination emulated sys=%s(%d) pc=0x%" PRIxPTR
-                                " result=0x%lx count=%u map=0x%" PRIxPTR "-0x%" PRIxPTR
-                                " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR " path=%s",
-                                syscallName(sysno),
-                                sysno,
-                                entry->address,
-                                static_cast<unsigned long>(result),
-                                entry->non_termination_count,
-                                entry->map_start,
-                                entry->map_end,
-                                entry->map_offset,
-                                entry->map_offset + (entry->address - entry->map_start),
-                                entry->path);
+                __android_log_print(ANDROID_LOG_DEBUG, kTag,
+                                    "raw syscall non-termination emulated sys=%s(%d) pc=0x%" PRIxPTR
+                                    " result=0x%lx count=%u map=0x%" PRIxPTR "-0x%" PRIxPTR
+                                    " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR " path=%s",
+                                    syscallName(sysno),
+                                    sysno,
+                                    entry->address,
+                                    static_cast<unsigned long>(result),
+                                    entry->non_termination_count,
+                                    entry->map_start,
+                                    entry->map_end,
+                                    entry->map_offset,
+                                    patchedInstructionFileOffset(*entry),
+                                    entry->path);
             }
         }
         mc.arm_r0 = static_cast<unsigned long>(result);
@@ -577,7 +589,7 @@ static void rememberPatch(uintptr_t address, uintptr_t map_start, uintptr_t map_
     entry.thumb = thumb;
     entry.active = true;
     entry.non_termination_count = 0;
-    snprintf(entry.path, sizeof(entry.path), "%s", path == nullptr ? "" : path);
+    snprintf(entry.path, sizeof(entry.path), "%s", pathOrEmpty(path));
     gPatchCount = index + 1;
 }
 
@@ -592,7 +604,7 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
         __android_log_print(ANDROID_LOG_DEBUG, kTag,
                             "raw syscall probe skipped volatile executable map=0x%" PRIxPTR
                             "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
-                            start, end, map_offset, path == nullptr ? "" : path);
+                            start, end, map_offset, pathOrEmpty(path));
         return;
     }
     if (!shouldScanPath(path, include_file_backed_app_code)) {
@@ -630,7 +642,7 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
         __android_log_print(ANDROID_LOG_DEBUG, kTag,
                             "raw syscall probe patched %zu svc instructions map=0x%" PRIxPTR
                             "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
-                            patched, start, end, map_offset, path == nullptr ? "" : path);
+                            patched, start, end, map_offset, pathOrEmpty(path));
     }
 #else
     (void) start;

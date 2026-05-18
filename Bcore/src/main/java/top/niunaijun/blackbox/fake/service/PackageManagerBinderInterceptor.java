@@ -20,7 +20,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
     @Override
     public boolean onTransact(Object binderProxy, int code, Parcel data, Parcel reply, int flags,
                               String descriptor, String method, String argsSummary) {
-        if (!"android.content.pm.IPackageManager".equals(descriptor) || reply == null) {
+        if (!IPACKAGE_MANAGER.equals(descriptor) || reply == null) {
             return false;
         }
         BinderPayloadSummary.PackageManagerCall call = BinderPayloadSummary.parsePackageManagerCall(
@@ -56,8 +56,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         reply.writeNoException();
         reply.writeInt(1);
         packageInfo.writeToParcel(reply, 0);
-        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
-        reply.setDataPosition(0);
+        resetReplyForInlineBinderRead(reply);
         recordHandled(call, describePackageInfo(packageInfo));
         return true;
     }
@@ -75,8 +74,7 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         reply.writeNoException();
         reply.writeInt(1);
         applicationInfo.writeToParcel(reply, 0);
-        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
-        reply.setDataPosition(0);
+        resetReplyForInlineBinderRead(reply);
         recordHandled(call, describeApplicationInfo(applicationInfo));
         return true;
     }
@@ -91,10 +89,14 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         }
         reply.writeNoException();
         reply.writeInt(BActivityThread.getBUid());
-        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
-        reply.setDataPosition(0);
+        resetReplyForInlineBinderRead(reply);
         recordHandled(call, "uid=" + BActivityThread.getBUid());
         return true;
+    }
+
+    private static void resetReplyForInlineBinderRead(Parcel reply) {
+        // BinderProxy.transact is intercepted in-process, so the caller reads this same Parcel.
+        reply.setDataPosition(0);
     }
 
     private void recordHandled(BinderPayloadSummary.PackageManagerCall call, String resultSummary) {

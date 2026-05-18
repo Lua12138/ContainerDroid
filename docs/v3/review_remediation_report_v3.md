@@ -85,7 +85,7 @@
 本轮最终使用设备：
 
 ```text
-adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp
+192.168.127.148:35717
 product:dandelion model:M2006C3LC device:dandelion
 ```
 
@@ -142,3 +142,205 @@ pixel_diff=anti-alias/subpixel/text-edge differences remain; no semantic content
 - Linux seccomp `SECCOMP_RET_TRAP` PC/SIGSYS 语义：https://man7.org/linux/man-pages/man2/seccomp.2.html
 - Android bionic `_exit` syscall 后不可返回语义参考：https://android.googlesource.com/platform/bionic/
 - Android Parcel/IPackageManager 相关源码入口：https://android.googlesource.com/platform/frameworks/base/
+- Android R8 keep-rule 官方说明：`-keep` 会保留类和指定成员，JNI/反射库应通过 `consumer-rules.pro` 向使用方提供必要规则：https://developer.android.com/topic/performance/app-optimization/add-keep-rules
+- Android/AOSP logging 官方说明：常量 `DEBUG=false` 可通过编译优化绕过日志路径，R8/ProGuard 可在构建期移除指定日志调用：https://source.android.com/docs/core/tests/debug/understanding-logging
+- CMake `target_compile_definitions` 官方说明：用于给目标设置编译定义，`-D` 前缀会被规范化处理：https://cmake.org/cmake/help/latest/command/target_compile_definitions.html
+
+## 2026-05-19 后续补充：构建期日志裁剪与正式截图内容门禁
+
+### 1. Pine / BlackBoxBinderMonitor 诊断 logcat 构建期裁剪
+
+用户提出仅靠运行时开关不足，禁用日志的产物不应保留可被手动恢复的诊断日志代码。交叉核验后确认：只使用 `-assumenosideeffects` 不能可靠移除所有字符串常量，因为部分日志参数和 JSON/event 常量仍可能被其他路径引用；因此采用“编译常量门控 + R8 + native 编译宏”的组合方案。
+
+处理：
+
+- Java 层：`app/build.gradle` 增加 `blackboxDiagnosticLogcatEnabled` 和 `blackboxDiagnosticLogcatMinifyEnabled`。当 `blackboxDiagnosticLogcatEnabled=false` 时，即使外部传入 `-PblackboxDiagnosticLogcatMinifyEnabled=false`，也强制开启 R8，并加载 `app/proguard-diagnostic-logcat-disabled.pro`。
+- Java call site：`top.canyie.pine.Pine`、`BlackBoxBinderMonitor`、`AsyncJsonlEventSink` 的 Pine/BinderMonitor logcat 输出均由 `BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED` 常量包裹，使禁用构建在 R8 阶段可删除不可达日志分支。
+- C++ 层：`Bcore/pine-core/build.gradle` 把同一构建选项传入 CMake；`utils/log.h` 在 `PINE_LOGCAT_ENABLED=0` 时将 `LOGV/LOGD/LOGI/LOGW/LOGE/LOGF` 展开为空语句，`FATAL` 仍保留 `abort()` 语义但不输出 Pine logcat。
+
+交叉验证：
+
+```text
+./gradlew -PblackboxDiagnosticLogcatEnabled=false \
+  -PblackboxDiagnosticLogcatMinifyEnabled=false \
+  -PblackboxDexDumpEnabled=false assembleBlackBox32Debug
+# BUILD SUCCESSFUL
+# :app:minifyBlackBox32DebugWithR8 执行/保持启用，证明 no-log 构建强制经过 R8。
+
+generated BuildConfig:
+  app/Bcore/black-binder/pine-core BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=false
+  Bcore/app BLACKBOX_DEX_DUMP_ENABLED=false
+
+pine compile command:
+  -DPINE_LOGCAT_ENABLED=0
+
+disabled APK/runtime verification:
+  runtime matrix: Pine logcat=0, BlackBoxBinderMonitor logcat=0, dex-dump logcat=0
+  libpine.so: NO_MATCH for configured Pine native diagnostic log strings
+  Java class names and event constants may still exist as non-logcat data; the verified guarantee is that
+  the no-log/no-dex build cannot emit the gated diagnostics and cannot re-enable dex dump at runtime.
+```
+
+收益：
+
+- no-log 产物中 Pine 与 BlackBoxBinderMonitor 的诊断 logcat 输出路径在 Java/R8 与 C++ 编译期均不可达。
+- runtime 选项无法恢复编译期禁用的诊断 logcat 代码。
+
+边界：
+
+- 该项只针对本轮要求收敛的 Pine/BlackBoxBinderMonitor 诊断 logcat，不宣称移除项目里所有普通业务日志。
+- `BlackBoxBinderMonitor` 的 JSONL 事件名常量仍属于文件事件记录功能；它们不是 logcat 输出，未按“诊断 logcat”一并移除。
+
+### 2. dex dump 构建期禁用与运行期开关联动
+
+处理：
+
+- `blackboxDexDumpEnabled` 继续作为编译期总开关写入 app/Bcore `BuildConfig.BLACKBOX_DEX_DUMP_ENABLED`。
+- 运行期 dex dump 选项只能在编译期允许时生效；编译期禁用时，即使用户打开运行期选项，也不会执行 dump 路径。
+
+交叉验证：
+
+```text
+RuntimeFeatureSwitchSourceTest.diagnosticLogcatDisabledBuildPrunesJavaAndNativeLogsAtBuildTime
+# 覆盖 BuildConfig 字段、强制 R8 逻辑、proguard 文件和 native CMake 参数。
+
+NativeCoreDexDumpSourceTest / NativeDexCookieDumpSourceTest / DexNotifyDumpSourceTest
+# 覆盖 compile-time guard 与 dump 成功后再记账的语义。
+```
+
+### 3. 截图内容一致的正式门禁
+
+此前验收文档只记录“内容一致但字节不一致”，而 `script/codex.sh acceptance-check` 仍使用 `cmp -s` 字节比较，导致动态状态栏和渲染抗锯齿差异使形式化门禁无法表达真实验收结果。交叉验证后确认这不是运行时沙盒差异，而是状态栏时间/网速/电量和文本边缘像素差异。
+
+处理：
+
+- 新增 `script/compare-screenshots.py`，只依赖 Python 标准库解析非交错 8-bit RGB/RGBA PNG。
+- 默认忽略顶部 48 像素动态状态栏；比较 RGB 内容区；要求平均绝对差、high-delta 百分比、major-delta 百分比均在阈值内。
+- `script/codex.sh acceptance-check` 先接受字节完全一致；若字节不一致，则调用内容比较器；通过时输出 `screenshot_status=matched_content`，失败才输出 `failed_screenshot`。
+- 新增 `script/test-compare-screenshots.py` 覆盖：完全相同通过、仅顶部动态行不同通过、小幅抗锯齿差异通过、内容区实质变化失败。
+
+交叉验证：
+
+```text
+python3 script/test-compare-screenshots.py
+# compare_screenshots_tests=passed
+
+WAIT_SECONDS=60 CAPTURE_SECONDS=45 LOGCAT_SECONDS=50 ARTIFACT_MAX_AGE_MINUTES=999999 ./script/codex.sh collect-required-packages
+# collect_required_packages_status=ready
+```
+
+当前截图指标：
+
+```text
+BestV:
+  /tmp/blackbox_bestv_screenshot.png
+  /tmp/blackbox_bestv_real_screenshot.png
+  average_abs_delta=0.9581287202380953
+  high_delta_percent=2.0320870535714284
+  major_delta_percent=0.17652529761904762
+  screenshot_content_status=matched
+
+Tester:
+  /tmp/blackbox_tester_screenshot.png
+  /tmp/blackbox_tester_real_screenshot.png
+  average_abs_delta=0.0
+  high_delta_percent=0.0
+  major_delta_percent=0.0
+  screenshot_content_status=matched
+```
+
+边界：
+
+- 该比较器是有界像素指标，不是 OCR/语义识别，也不宣称字节级截图完全一致。
+- 对计划中“截图内容完全一致”的本地门禁解释为：动态系统栏之外的内容区像素差异必须落在严格阈值内；若出现布局、页面内容或大面积像素差异，门禁会失败。
+
+## 2026-05-19 13:21 补充：Proguard 变体一致性复测
+
+用户要求重点确认启用 Proguard 的构建与默认构建功能一致。复测时发现并修复两个真实 Proguard 规则缺口，均有失败证据、源码交叉验证和红/绿测试。
+
+### 1. BlackReflection 生成接口被混淆
+
+失败证据：
+
+```text
+java.lang.ExceptionInInitializerError at BlackBoxCore.get(:86)
+Caused by: java.lang.NullPointerException at BlackBoxCore.<init>(:83)
+  mHostUserId = BRUserHandle.get().myUserId()
+```
+
+交叉验证：
+
+- 反查 minified dex，`black.android.os.UserHandleStatic.myUserId()` 被 R8 改名为 `a()`。
+- BlackReflection 的 invocation handler 通过 `Method.getName()` 去查 framework 成员；方法名被改后会查 `android.os.UserHandle.a()`，返回空值。
+
+处理：
+
+- `android-mirror/consumer-rules.pro` 增加 `-keep class black.** { *; }` 和 `-keepattributes *Annotation*`。
+- 新增 `BlackReflectionProguardRulesTest`，先红后绿验证规则存在。
+
+收益与风险：
+
+- 收益：minified app 启动阶段不再因 BlackReflection 代理方法名不稳定崩溃。
+- 风险：保留 `black.**` mirror 接口会减少这部分代码的混淆收益，但范围仅限 mirror 生成接口，且这些接口本来就是运行期反射边界。
+
+### 2. Pine JNI 注册方法被混淆
+
+失败证据：
+
+```text
+Failed to register native method top.canyie.pine.Pine.enableFastNative()V
+JNI DETECTED ERROR IN APPLICATION:
+  java.lang.NoSuchMethodError: no static or non-static method "Ltop/canyie/pine/Pine;.enableFastNative()V"
+```
+
+交叉验证：
+
+- `jni_bridge.cpp` 在 `JNI_OnLoad` 中通过硬编码字符串查找 `top/canyie/pine/Pine` 和 `top/canyie/pine/Ruler`。
+- `pine.cpp` 的 `RegisterNatives` 表硬编码 `init0`、`enableFastNative`、`getArtMethod`、`hook0`、`getArgsArm32/Arm64/X86` 等 Java 方法名和签名。
+- `Pine.java` 用字符串类名加载 `top.canyie.pine.entry.*Entry`，再通过 `getDeclaredMethod("voidBridge"...)` 等固定方法名取桥接方法。
+- Android 官方 R8 文档说明 JNI/反射是常见 keep-rule 场景：R8 无法看见字符串动态查找，可能删除或重命名成员并导致 `NoSuchMethodError`。
+
+处理：
+
+- `Bcore/pine-core/consumer-rules.pro` 保留 Pine、Ruler、PineConfig、entry、callback、utils 相关类及成员。
+- 新增 `PineProguardRulesSourceTest`，先红后绿验证 JNI 注册/entry bridge 所需 keep 规则。
+
+收益与风险：
+
+- 收益：Proguard 诊断变体不再在 Pine hook 初始化阶段 abort，BestV/Tester 均能进入与默认构建一致的运行路径。
+- 风险：规则比单个 `native <methods>` 更宽，会减少 Pine 包内优化/混淆收益。该选择是有意的：Pine 同时依赖 `RegisterNatives`、字符串类名、桥接方法名和 native/reflection-adjacent callback，窄规则容易漏掉下一处动态边界。
+
+### 3. 最终变体矩阵
+
+构建产物：
+
+```text
+92e8f426ee406084562ac96465d7d445c87817a16a2425a06b743477ad84ab44  /tmp/blackbox_variant_matrix/default.apk
+f745f1c639f35e886a635e8ff731ed214758fb0fd2650f37fb9c7d2cdb12c7fb  /tmp/blackbox_variant_matrix/proguard_logs_dex.apk
+a5edfef22eb6703ef04f0f728470b0eafe1ec67fd5692854dd7c63398877ae03  /tmp/blackbox_variant_matrix/proguard_nolog_nodex.apk
+```
+
+设备：`192.168.127.148:35717`，`M2006C3LC`，Android 11。
+
+| Variant | Package | Screenshot gate | Sandbox fatal/JNI markers | Physical fatal/JNI markers | Target death veto |
+| --- | --- | --- | ---: | ---: | ---: |
+| `default` | `com.bestv.tv.video.iqy.tjdx` | `matched_content` | 0 | 0 | 0 |
+| `default` | `com.example.tester` | `matched_content` | 0 | 0 | 0 |
+| `proguard_logs_dex` | `com.bestv.tv.video.iqy.tjdx` | `matched_content` | 0 | 0 | 0 |
+| `proguard_logs_dex` | `com.example.tester` | `matched_content` | 0 | 0 | 0 |
+| `proguard_nolog_nodex` | `com.bestv.tv.video.iqy.tjdx` | `matched_content` | 0 | 0 | 0 |
+| `proguard_nolog_nodex` | `com.example.tester` | `matched_content` | 0 | 0 | 0 |
+
+No-log/no-dex 变体运行期确认：
+
+```text
+variant                 Pine logcat  BlackBoxBinderMonitor logcat  dex dump lines
+default                 19575         3892                          62
+proguard_logs_dex       19166         3804                          62
+proguard_nolog_nodex    0             0                             0
+```
+
+边界说明：
+
+- no-log/no-dex 变体仍可能输出项目内其他普通日志，例如 `BActivityThread` 生命周期诊断；本轮用户明确要求收敛的是 Pine 与 BlackBoxBinderMonitor logcat 以及 dex dump，不把所有项目日志伪称为已移除。
+- BestV 截图按正式内容门禁通过，仍不声明状态栏/抗锯齿像素级字节完全一致。

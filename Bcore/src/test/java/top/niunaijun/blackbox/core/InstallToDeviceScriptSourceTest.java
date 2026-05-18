@@ -4,9 +4,9 @@ import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class InstallToDeviceScriptSourceTest {
 
@@ -194,15 +195,6 @@ public class InstallToDeviceScriptSourceTest {
         assertNotEquals("screenshot mismatch must fail acceptance", 0, process.exitValue());
         assertTrue(output, output.contains("screenshot_status=failed"));
         assertTrue(output, output.contains("acceptance_status=failed_screenshot"));
-    }
-
-    private static String readSource(String rootRelativePath) throws Exception {
-        Path root = findSourceRoot();
-        Path candidate = root.resolve(rootRelativePath);
-        if (Files.isRegularFile(candidate)) {
-            return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + root);
     }
 
     private static Path findSourceRoot() {

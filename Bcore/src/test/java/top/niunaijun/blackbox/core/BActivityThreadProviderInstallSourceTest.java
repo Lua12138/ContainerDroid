@@ -2,13 +2,9 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class BActivityThreadProviderInstallSourceTest {
 
@@ -40,16 +36,5 @@ public class BActivityThreadProviderInstallSourceTest {
         assertTrue(source.contains("ProviderInfo.class.isAssignableFrom(parameterTypes[2])"));
         assertFalse("method lookup must not depend on declared-method order",
                 source.contains("Reflector.findMethodByFirstName(mainThread.getClass(), \"installProvider\")"));
-    }
-
-    private static String readSource(String relativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(relativePath + " not found from " + current);
     }
 }

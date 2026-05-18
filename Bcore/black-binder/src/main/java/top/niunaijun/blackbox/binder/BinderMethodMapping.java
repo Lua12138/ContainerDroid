@@ -29,6 +29,11 @@ public final class BinderMethodMapping {
             "android.os.IServiceManager$Stub",
             "android.os.storage.IStorageManager$Stub"
     };
+    private static final Pattern DESCRIPTOR_BLOCK_PATTERN = Pattern.compile(
+            "\"((?:\\\\.|[^\"])*)\"\\s*:\\s*\\{(.*?)\\}",
+            Pattern.DOTALL);
+    private static final Pattern CODE_METHOD_PATTERN = Pattern.compile(
+            "\"(-?\\d+)\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"");
 
     private final Map<String, Map<Integer, String>> mappings = new HashMap<>();
 
@@ -95,14 +100,11 @@ public final class BinderMethodMapping {
         if (json == null) {
             return;
         }
-        Matcher descriptorMatcher = Pattern.compile(
-                "\"((?:\\\\.|[^\"])*)\"\\s*:\\s*\\{(.*?)\\}",
-                Pattern.DOTALL).matcher(json);
+        Matcher descriptorMatcher = DESCRIPTOR_BLOCK_PATTERN.matcher(json);
         while (descriptorMatcher.find()) {
             String descriptor = unescape(descriptorMatcher.group(1));
             String body = descriptorMatcher.group(2);
-            Matcher codeMatcher = Pattern.compile(
-                    "\"(-?\\d+)\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"").matcher(body);
+            Matcher codeMatcher = CODE_METHOD_PATTERN.matcher(body);
             while (codeMatcher.find()) {
                 try {
                     register(descriptor, Integer.parseInt(codeMatcher.group(1)),
@@ -117,15 +119,12 @@ public final class BinderMethodMapping {
         if (file == null || !file.isFile()) {
             return;
         }
-        BufferedReader reader = new BufferedReader(new FileReader(file));
         StringBuilder builder = new StringBuilder((int) Math.min(file.length(), 1024 * 1024));
-        try {
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 builder.append(line).append('\n');
             }
-        } finally {
-            reader.close();
         }
         registerJson(builder.toString());
     }

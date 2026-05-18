@@ -2,13 +2,9 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class IConnectivityManagerProxySourceTest {
     @Test
@@ -34,15 +30,5 @@ public class IConnectivityManagerProxySourceTest {
         assertFalse("Connectivity proxy fixes must stay generic and not target a specific sample or app",
                 source.contains("com.bestv.tv.video.iqy.tjdx")
                         || source.contains("com.example.tester"));
-    }
-
-    private static String readSource(String... candidates) throws Exception {
-        for (String candidate : candidates) {
-            Path path = Paths.get(candidate);
-            if (Files.exists(path)) {
-                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError("missing source: " + String.join(", ", candidates));
     }
 }

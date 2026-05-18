@@ -8,6 +8,7 @@ import top.canyie.pine.callback.MethodHook;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 
@@ -174,19 +175,8 @@ public class ClassLoaderDiagnosticsProxy implements IInjectHook {
     }
 
     static boolean isDiagnosticsEnabled() {
-        return isTruthy(System.getenv(CLASSLOADER_DIAG_ENV))
-                || isTruthy(System.getProperty(CLASSLOADER_DIAG_JAVA_PROPERTY))
-                || isTruthy(SystemPropertiesCompat.get(CLASSLOADER_DIAG_PROPERTY));
-    }
-
-    private static boolean isTruthy(String value) {
-        if (value == null) {
-            return false;
-        }
-        String normalized = value.trim();
-        return "1".equals(normalized)
-                || "true".equalsIgnoreCase(normalized)
-                || "yes".equalsIgnoreCase(normalized)
-                || "on".equalsIgnoreCase(normalized);
+        return DiagnosticSwitch.isTruthy(System.getenv(CLASSLOADER_DIAG_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(CLASSLOADER_DIAG_JAVA_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(CLASSLOADER_DIAG_PROPERTY));
     }
 }

@@ -2,13 +2,10 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class NativeFileHookSourceTest {
 
@@ -623,8 +620,8 @@ public class NativeFileHookSourceTest {
         assertTrue("Proc maps/cmdline/version shims should be controlled by an explicit Android debug property",
                 nativeFileHook.contains("debug.blackbox.proc_shim")
                         && runtimeHook.contains("debug.blackbox.proc_shim")
-                        && nativeFileHook.contains("__system_property_get")
-                        && runtimeHook.contains("__system_property_get"));
+                        && nativeFileHook.contains("native_property::getBool(kProcShimProperty)")
+                        && runtimeHook.contains("native_property::getBool(kProcShimProperty)"));
         assertTrue("Early proc maps shim should be opt-in so normal runs do not expose fd93 maps contents to protected code",
                 packageSetup.contains("if (isProcShimEnabled())")
                         && packageSetup.contains("prepareEarlyProcMapsShim(package_name)")
@@ -653,7 +650,7 @@ public class NativeFileHookSourceTest {
         assertTrue("Transient proc maps virtualization should be controlled by an explicit Android debug property",
                 source.contains("debug.blackbox.transient_maps")
                         && transientToggle >= 0
-                        && source.contains("__system_property_get"));
+                        && source.contains("native_property::getBool(kTransientProcMapsProperty)"));
         assertTrue("Transient proc maps should stay diagnostic opt-in rather than replacing real /proc/self/maps by default",
                 transientHelper >= 0
                         && source.contains("shouldUseTransientProcMaps")
@@ -1713,26 +1710,4 @@ public class NativeFileHookSourceTest {
                 enableRedirect >= 0 && setShield > enableRedirect && setShield < makeApplication);
     }
 
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
-
-    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path moduleCandidate = dir.resolve(moduleRelativePath);
-            if (Files.isRegularFile(moduleCandidate)) {
-                return new String(Files.readAllBytes(moduleCandidate), StandardCharsets.UTF_8);
-            }
-            Path rootCandidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(rootCandidate)) {
-                return new String(Files.readAllBytes(rootCandidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
 }

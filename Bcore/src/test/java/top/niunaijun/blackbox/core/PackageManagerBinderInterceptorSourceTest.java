@@ -2,12 +2,8 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class PackageManagerBinderInterceptorSourceTest {
 
@@ -17,7 +13,7 @@ public class PackageManagerBinderInterceptorSourceTest {
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/PackageManagerBinderInterceptor.java");
 
         assertTrue(source.contains("implements BlackBoxBinderMonitor.BinderTransactInterceptor"));
-        assertTrue(source.contains("\"android.content.pm.IPackageManager\".equals(descriptor)"));
+        assertTrue(source.contains("IPACKAGE_MANAGER.equals(descriptor)"));
         assertTrue(source.contains("BinderPayloadSummary.parsePackageManagerCall"));
         assertTrue(source.contains("BlackBoxCore.getBPackageManager().getPackageInfo"));
         assertTrue(source.contains("BlackBoxCore.getBPackageManager().getApplicationInfo"));
@@ -25,7 +21,9 @@ public class PackageManagerBinderInterceptorSourceTest {
         assertTrue(source.contains("reply.writeNoException()"));
         assertTrue(source.contains("writeToParcel(reply, 0)"));
         assertTrue("This interceptor writes directly into the caller-provided reply Parcel from a BinderProxy.transact hook; reset is required before the generated IPackageManager proxy reads readException()/payload",
-                countOccurrences(source, "reply.setDataPosition(0)") >= 3);
+                source.contains("resetReplyForInlineBinderRead")
+                        && source.contains("reply.setDataPosition(0)")
+                        && countOccurrences(source, "resetReplyForInlineBinderRead(reply)") >= 3);
         assertTrue(source.contains("BlackBoxBinderMonitor.recordProxyCall"));
         assertTrue(source.contains("describePackageInfo(packageInfo)"));
         assertTrue(source.contains("signatureHash"));
@@ -55,18 +53,6 @@ public class PackageManagerBinderInterceptorSourceTest {
         assertTrue(source.contains("import top.niunaijun.blackbox.fake.service.PackageManagerBinderInterceptor;"));
         assertTrue(source.contains("BlackBoxBinderMonitor.setTransactInterceptor(new PackageManagerBinderInterceptor())"));
     }
-
-    private static String readSource(String relativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(relativePath + " not found from " + current);
-    }
-
     private static int countOccurrences(String source, String pattern) {
         int count = 0;
         int index = 0;

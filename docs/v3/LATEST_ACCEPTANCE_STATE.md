@@ -1,93 +1,181 @@
 # Latest Acceptance State
 
-- generated_at: 2026-05-19 00:50:00 +0800
-- package_from_docs_test_package_name: com.bestv.tv.video.iqy.tjdx
+- generated_at: 2026-05-19 16:02:50 +0800
 - plan_file: docs/v3/PLAN_v3.md
-- plan_file_sha256: 224395e5a32d795ecc66f7ba0104f5d5ad06bff72bed292c7cf6514749d65fd4
-- plan_file_mtime: 2026-05-18 22:03:21.272789474 +0800
-- status: runtime_content_parity_pass_strict_screenshot_bytes_not_claimed
+- plan_file_sha256: 3f8fc779772c46018e84fe18399e728c63889507970fe01741e381f9f7fb0f23
+- plan_file_mtime: 2026-05-19 14:10:47.910998471 +0800
+- status: required_package_acceptance_ready
 
-## Summary
+## Current PLAN Objective
 
-The review-report remediation path is build/test green and both required packages run in the sandbox on the connected device.
+`docs/v3/PLAN_v3.md` currently requires reviewing all files changed since
+`5f097c84ede147483a4cb1919f4e9406b5b46ceb`, including that commit itself,
+and optimizing/refactoring without changing original meaning, improving
+readability, reducing unnecessary redundancy, and improving robustness.
 
-- `com.example.tester` now passes in both physical and sandbox runs with `failCount=0`, `warnCount=0`, `timeoutCount=0`.
-- `com.bestv.tv.video.iqy.tjdx` now reaches protected app logic in sandbox, dumps the real payload dex, uses the generic legacy-aspect proxy, and does not hit the target-package `BProcessManager: App Died` veto.
-- Target `CompatibilityInfo` is now propagated into `LoadedApk`, `ActivityThread.AppBindData`, and `LaunchActivityItem`; this fixes the BestV legacy resource/display scaling discrepancy observed in the version text.
-- The latest screenshots are content-consistent but not byte-identical. Tester differs only in status-bar dynamic time/network/battery pixels; BestV differs in text-edge/anti-alias pixels after matching the same page, letterbox, and version text scale. Therefore strict byte-level screenshot parity is not claimed.
-
-## Local Verification
+## Fresh Local Verification
 
 ```text
-./gradlew :Bcore:testDebugUnitTest --tests top.niunaijun.blackbox.core.BActivityThreadAppComponentFactorySourceTest.bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling
-BUILD SUCCESSFUL
+git diff --check
+# exit 0
 
-./gradlew :Bcore:black-binder:testDebugUnitTest :Bcore:testDebugUnitTest assembleBlackBox32Debug
-BUILD SUCCESSFUL
+python3 script/test-compare-screenshots.py
+# compare_screenshots_tests=passed
+
+JAVA_HOME=/home/fd/.sdkman/candidates/java/11.0.14.1-jbr \
+./gradlew --no-daemon :Bcore:testDebugUnitTest :Bcore:black-binder:testDebugUnitTest \
+  assembleBlackBox32Debug assembleBlackBox64Debug
+# BUILD SUCCESSFUL in 9s
+# 206 actionable tasks: 4 executed, 202 up-to-date
 ```
 
-## Device
+Known build warnings remain Android SDK XML/buildTools compatibility warnings;
+the verification command exited with code 0.
+
+## Required Package Device Acceptance
+
+Command:
 
 ```text
-adb-IZM7HY7HEM7PT899-3IbfoZ._adb-tls-connect._tcp
-product:dandelion model:M2006C3LC device:dandelion
+JAVA_HOME=/home/fd/.sdkman/candidates/java/11.0.14.1-jbr \
+./script/codex.sh collect-required-packages
 ```
 
-## Sandbox Artifacts
-
-| Package | Runtime | Log | Screenshot | Result |
-| --- | ---: | --- | --- | --- |
-| `com.example.tester` | 100s | `/tmp/20260519_loadedapk_compat_tester_sandbox_100s.logcat` | `/tmp/20260519_loadedapk_compat_tester_sandbox_100s.png` | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`; `proc_maps_summary blackboxPathCount=0 writableExecutableCount=0`; `network_interface_summary interfaceCount=3 hardwareAddressCount=0 interfaceNames=dummy0,wlan0,lo`; Apple.com homepage visible with `ENVDIAG PASS`. |
-| `com.bestv.tv.video.iqy.tjdx` | 120s | `/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat` | `/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png` | Runs with `LegacyAspectProxyActivity$P0`; no target-package `BProcessManager: App Died`; no `FATAL EXCEPTION`/`JNI_ERR`/`Fatal signal`; reaches `BesTVConfig` and `IqiyiActivity`; dumps payload dex; BestV page content matches physical. |
-
-## Physical Artifacts
-
-| Package | Runtime | Log | Screenshot | Result |
-| --- | ---: | --- | --- | --- |
-| `com.example.tester` | 100s | `/tmp/20260519_tester_physical_fresh_100s.logcat` | `/tmp/20260519_tester_physical_fresh_100s.png` | `environment_assessment PASS failCount=0 warnCount=0 timeoutCount=0`; network summary matches sandbox; Apple.com content matches. |
-| `com.bestv.tv.video.iqy.tjdx` | 120s | `/tmp/20260519_bestv_physical_fresh_120s.logcat` | `/tmp/20260519_bestv_physical_fresh_120s.png` | Runs and reaches the same app page/logical state as sandbox; no same-class fatal signature in the checked critical patterns. |
-
-## Key Evidence
+Result:
 
 ```text
-/tmp/20260519_loadedapk_compat_tester_sandbox_100s.logcat:
-  proc_maps_summary blackboxPathCount=0 writableExecutableCount=0
-  network_interface_summary interfaceCount=3 upCount=3 loopbackCount=1 hardwareAddressCount=0 interfaceNames=dummy0,wlan0,lo
-  environment_assessment verdict=PASS failCount=0 warnCount=0 timeoutCount=0
-
-/tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat:
-  ActivityStack ... proxyActivity: top.niunaijun.blackbox.proxy.LegacyAspectProxyActivity$P0
-  BesTVConfig: init
-  NativeCore dumpDex ... sha1=81069652080f469c9417b3928b773983684858ee
-  IqiyiActivity: enter onCreate
-  IqiyiActivity: leave onCreate.
+collect_required_package=com.bestv.tv.video.iqy.tjdx
+collect_required_package_status=ready
+collect_required_package=com.example.tester
+collect_required_package_status=ready
+collect_required_packages_status=ready
 ```
 
-Critical-pattern scan:
+Device:
 
 ```text
-rg "BProcessManager: App Died: com\\.bestv\\.tv\\.video\\.iqy\\.tjdx|FATAL EXCEPTION|JNI_ERR|Fatal signal|ANR in" /tmp/20260519_loadedapk_compat_bestv_sandbox_120s.logcat
-# no output
+192.168.127.148:35717 product:dandelion model:M2006C3LC
 ```
 
-Screenshot SHA1 and diff:
+### `com.bestv.tv.video.iqy.tjdx`
+
+Artifacts:
 
 ```text
-f18b2153f8efc7f812cf19c878a7e0affc1341b4  /tmp/20260519_loadedapk_compat_tester_sandbox_100s.png
-fdbb70ae5714bca1dac5e4f3dc6650c35e3c9898  /tmp/20260519_tester_physical_fresh_100s.png
-content_match=Apple.com homepage + ENVDIAG PASS; dynamic status-bar pixels differ
-
-7b569341437835c829ce66ede9838e364acc130e  /tmp/20260519_loadedapk_compat_bestv_sandbox_120s.png
-edf62515482d949cdde43595df3b0200df1df2dc  /tmp/20260519_bestv_physical_fresh_120s.png
-content_match=same BestV installed/return-key page, legacy letterbox, version text scale aligned; text-edge pixels differ
+generated_at=2026-05-19 15:59:06 +0800
+status=success
+failed_stage=none
+container_log=/tmp/blackbox_bestv_logcat.txt
+real_log=/tmp/blackbox_bestv_real_logcat.txt
+screenshot=/tmp/blackbox_bestv_screenshot.png
+real_screenshot=/tmp/blackbox_bestv_real_screenshot.png
 ```
 
-Payload dex:
+Hashes:
 
 ```text
-cookie_81069652080f469c9417b3928b773983684858ee.dex
+48f7e66f6225e0e64bdf92aa72196a7ca3473eaef182ad8bab83979054c36bd4  /tmp/blackbox_bestv_artifacts_manifest.txt
+692d5a502cb97b9e1c84490938be9424b75135fe0b3c8ae153ade17272771843  /tmp/blackbox_bestv_logcat.txt
+ca6606ccd9ad6c0e12e52e5377c63b85787bfad753908cd6663b9ad0fbc6681a  /tmp/blackbox_bestv_real_logcat.txt
+361f2866b36e8f18a7043a20ef779193395ecd7330db6849900282408c75ad9b  /tmp/blackbox_bestv_screenshot.png
+54223c31f7f7289bd50d0822e7289ec808564cb4ddf01313dc1b01878b78d087  /tmp/blackbox_bestv_real_screenshot.png
 ```
 
-## Current Non-Claimed Item
+Gate results:
 
-`script/codex.sh acceptance-check` historically enforces byte-identical screenshot comparison. The latest evidence proves runtime health and content parity, but not byte-identical screenshots. If byte-identical screenshots remain the formal gate, the comparison tool must ignore status-bar dynamic pixels and tolerate renderer anti-alias/subpixel differences, or capture a deterministic compositor frame.
+```text
+manifest_status=success
+verify_status=success
+veto_status=passed
+screenshot_status=matched_content
+average_abs_delta=0.9581287202380953
+high_delta_percent=2.0320870535714284
+major_delta_percent=0.17652529761904762
+acceptance_status=ready_for_log_review
+```
+
+Focused failure-marker review:
+
+```text
+/tmp/blackbox_bestv_logcat.txt lines=16202
+fatal_crash=0
+bestv_died_veto=0
+tester_died=0
+crash_context=0
+handle_crash=0
+anr_sigsegv=0
+
+/tmp/blackbox_bestv_real_logcat.txt lines=2407
+fatal_crash=0
+bestv_died_veto=0
+tester_died=0
+crash_context=0
+handle_crash=0
+anr_sigsegv=0
+```
+
+### `com.example.tester`
+
+Artifacts:
+
+```text
+generated_at=2026-05-19 16:00:57 +0800
+status=success
+failed_stage=none
+container_log=/tmp/blackbox_tester_logcat.txt
+real_log=/tmp/blackbox_tester_real_logcat.txt
+screenshot=/tmp/blackbox_tester_screenshot.png
+real_screenshot=/tmp/blackbox_tester_real_screenshot.png
+```
+
+Hashes:
+
+```text
+bedf4bdd3102eedf54b1642dd13d157380861bd294aa0392bc87e3270a245feb  /tmp/blackbox_tester_artifacts_manifest.txt
+ce7a8c1347336309ea47eb0d64653fed41749ed894861f37c1e68d5e573c8777  /tmp/blackbox_tester_logcat.txt
+cd1bd47d7640bb71973d1a9cd59228dcd0c9ea835a35968c4d79b7a941ba2954  /tmp/blackbox_tester_real_logcat.txt
+4b468d5a4312c6f9df043c0437127a9dadbe739a27706484e06373c158c52c34  /tmp/blackbox_tester_screenshot.png
+d2197e467b385c33310b19577e143fbfd6802e3b61e0b92ae1117f990411dce3  /tmp/blackbox_tester_real_screenshot.png
+```
+
+Gate results:
+
+```text
+manifest_status=success
+verify_status=success
+veto_status=passed
+screenshot_status=matched_content
+average_abs_delta=0.0
+high_delta_percent=0.0
+major_delta_percent=0.0
+acceptance_status=ready_for_log_review
+```
+
+Focused failure-marker review:
+
+```text
+/tmp/blackbox_tester_logcat.txt lines=10051
+fatal_crash=0
+bestv_died_veto=0
+tester_died=0
+crash_context=0
+handle_crash=0
+anr_sigsegv=0
+
+/tmp/blackbox_tester_real_logcat.txt lines=1042
+fatal_crash=0
+bestv_died_veto=0
+tester_died=0
+crash_context=0
+handle_crash=0
+anr_sigsegv=0
+```
+
+## Notes
+
+- Strict byte-identical screenshot equality is not claimed. The formal gate
+  accepts exact byte matches or bounded content-area RGB comparison after
+  masking dynamic top status-bar rows.
+- The collected logs still contain expected diagnostic Pine/BlackBoxBinderMonitor
+  entries and platform/OEM background noise. The focused failure-marker review
+  found no fatal/crash/ANR/veto markers for either package pair.

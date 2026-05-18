@@ -20,6 +20,7 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 
@@ -431,9 +432,9 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean shouldTraceSandboxExec() {
-        return isTruthy(System.getenv(EXEC_TRACE_ENV))
-                || isTruthy(System.getProperty(EXEC_TRACE_JAVA_PROPERTY))
-                || isTruthy(SystemPropertiesCompat.get(EXEC_TRACE_PROPERTY));
+        return DiagnosticSwitch.isTruthy(System.getenv(EXEC_TRACE_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(EXEC_TRACE_JAVA_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(EXEC_TRACE_PROPERTY));
     }
 
     private static String formatCommand(Object[] args) {
@@ -486,10 +487,7 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean isProcMountsCommandArgs(Object[] args) {
-        if (args == null || args.length == 0) {
-            return false;
-        }
-        return isProcMountsCommand(args[0]);
+        return isProcMountsCommand(firstCommandArg(args));
     }
 
     private static boolean isProcMountsCommand(Object command) {
@@ -509,10 +507,7 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean isGetpropCommandArgs(Object[] args) {
-        if (args == null || args.length == 0) {
-            return false;
-        }
-        return isGetpropCommand(args[0]);
+        return isGetpropCommand(firstCommandArg(args));
     }
 
     private static boolean isGetpropCommand(Object command) {
@@ -530,10 +525,7 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean isIdCommandArgs(Object[] args) {
-        if (args == null || args.length == 0) {
-            return false;
-        }
-        return isIdCommand(args[0]);
+        return isIdCommand(firstCommandArg(args));
     }
 
     private static boolean isIdCommand(Object command) {
@@ -551,10 +543,11 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean isProcSelfStatusCommandArgs(Object[] args) {
-        if (args == null || args.length == 0) {
-            return false;
-        }
-        return isProcSelfStatusCommand(args[0]);
+        return isProcSelfStatusCommand(firstCommandArg(args));
+    }
+
+    private static Object firstCommandArg(Object[] args) {
+        return args == null || args.length == 0 ? null : args[0];
     }
 
     private static boolean isProcSelfStatusCommand(Object command) {
@@ -852,26 +845,15 @@ public class RuntimeExecProxy implements IInjectHook {
     }
 
     private static boolean isDynamicProcMountsEnabled() {
-        return isTruthy(System.getenv(DYNAMIC_PROC_MOUNTS_ENV))
-                || isTruthy(System.getProperty(DYNAMIC_PROC_MOUNTS_JAVA_PROPERTY))
-                || isTruthy(SystemPropertiesCompat.get(DYNAMIC_PROC_MOUNTS_PROPERTY));
+        return DiagnosticSwitch.isTruthy(System.getenv(DYNAMIC_PROC_MOUNTS_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(DYNAMIC_PROC_MOUNTS_JAVA_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(DYNAMIC_PROC_MOUNTS_PROPERTY));
     }
 
     private static boolean shouldTraceStaticProcess() {
-        return isTruthy(System.getenv(STATIC_PROCESS_TRACE_ENV))
-                || isTruthy(System.getProperty(STATIC_PROCESS_TRACE_JAVA_PROPERTY))
-                || isTruthy(SystemPropertiesCompat.get(STATIC_PROCESS_TRACE_PROPERTY));
-    }
-
-    private static boolean isTruthy(String value) {
-        if (value == null) {
-            return false;
-        }
-        String normalized = value.trim();
-        return "1".equals(normalized)
-                || "true".equalsIgnoreCase(normalized)
-                || "yes".equalsIgnoreCase(normalized)
-                || "on".equalsIgnoreCase(normalized);
+        return DiagnosticSwitch.isTruthy(System.getenv(STATIC_PROCESS_TRACE_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(STATIC_PROCESS_TRACE_JAVA_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(STATIC_PROCESS_TRACE_PROPERTY));
     }
 
     private static String readProcMounts() {

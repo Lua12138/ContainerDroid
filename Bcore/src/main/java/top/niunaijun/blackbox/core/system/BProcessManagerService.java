@@ -29,6 +29,7 @@ import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ApplicationThreadCompat;
@@ -50,6 +51,17 @@ public class BProcessManagerService implements ISystemService {
     private static final int PROC_STATUS_MAX_BYTES = 2048;
     private static final String SKIP_KILL_ON_BINDER_DIED_PROPERTY =
             "debug.blackbox.skip_kill_on_binder_died";
+    private static final String[] PROC_STATUS_SUMMARY_FIELDS = {
+            "Name:",
+            "State:",
+            "Tgid:",
+            "Pid:",
+            "PPid:",
+            "TracerPid:",
+            "Uid:",
+            "Gid:",
+            "Threads:"
+    };
 
     public static BProcessManagerService sBProcessManagerService = new BProcessManagerService();
     private final Map<Integer, Map<String, ProcessRecord>> mProcessMap = new HashMap<>();
@@ -389,15 +401,7 @@ public class BProcessManagerService implements ISystemService {
         String raw = new String(buffer, 0, read, StandardCharsets.UTF_8);
         StringBuilder builder = new StringBuilder();
         for (String line : raw.split("\n")) {
-            if (line.startsWith("Name:")
-                    || line.startsWith("State:")
-                    || line.startsWith("Tgid:")
-                    || line.startsWith("Pid:")
-                    || line.startsWith("PPid:")
-                    || line.startsWith("TracerPid:")
-                    || line.startsWith("Uid:")
-                    || line.startsWith("Gid:")
-                    || line.startsWith("Threads:")) {
+            if (isProcStatusSummaryField(line)) {
                 if (builder.length() > 0) {
                     builder.append("; ");
                 }
@@ -407,19 +411,17 @@ public class BProcessManagerService implements ISystemService {
         return builder.length() == 0 ? "no_core_fields" : builder.toString();
     }
 
-    private static boolean isSkipKillOnBinderDiedEnabled() {
-        return isTruthy(SystemPropertiesCompat.get(SKIP_KILL_ON_BINDER_DIED_PROPERTY));
+    private static boolean isProcStatusSummaryField(String line) {
+        for (String field : PROC_STATUS_SUMMARY_FIELDS) {
+            if (line.startsWith(field)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private static boolean isTruthy(String value) {
-        if (value == null) {
-            return false;
-        }
-        String normalized = value.trim();
-        return "1".equals(normalized)
-                || "true".equalsIgnoreCase(normalized)
-                || "yes".equalsIgnoreCase(normalized)
-                || "on".equalsIgnoreCase(normalized);
+    private static boolean isSkipKillOnBinderDiedEnabled() {
+        return DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(SKIP_KILL_ON_BINDER_DIED_PROPERTY));
     }
 
     private static void createProc(ProcessRecord record) {

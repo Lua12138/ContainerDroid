@@ -2,19 +2,19 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class BActivityThreadAppComponentFactorySourceTest {
+    private static final String[] B_ACTIVITY_THREAD_SOURCE = {
+            "src/main/java/top/niunaijun/blackbox/app/BActivityThread.java",
+            "Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java"
+    };
 
     @Test
     public void bindApplicationClearsVirtualAppComponentFactoryBeforeMakeApplication() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int applicationInfo = source.indexOf("applicationInfo =");
         int makeApplication = source.indexOf("makeApplication(false, null)");
@@ -33,7 +33,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindApplicationPropagatesLoadedApkMakeApplicationFailure() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int makeApplication = source.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
         int contextFix = source.indexOf("ContextCompat.fixVirtual(mInitialApplication, packageName)", makeApplication);
@@ -50,7 +50,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindApplicationLogsUidIdentityBeforeMakeApplication() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int loadedApkInfo = source.indexOf("_set_mApplicationInfo(applicationInfo)");
         int identityLog = source.indexOf("logApplicationIdentity(packageName, processName, applicationInfo)");
@@ -75,7 +75,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindApplicationConfiguresNativeVirtualUidBeforeTerminationShieldPackage() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int nativeInit = source.indexOf("NativeCore.init(Build.VERSION.SDK_INT)");
         int setVirtualUid = source.indexOf("NativeCore.setVirtualUid(BActivityThread.getBUid())", nativeInit);
@@ -88,7 +88,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindApplicationLogsPlatformInitialApplicationAfterMakeApplication() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int makeApplication = source.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
         int setInitialApplication = source.indexOf("_set_mInitialApplication(mInitialApplication)", makeApplication);
@@ -123,7 +123,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void launchActivityRevalidatesApplicationReferencesBeforeFrameworkDispatch() throws Exception {
-        String activityThreadSource = readBActivityThreadSource();
+        String activityThreadSource = readSource(B_ACTIVITY_THREAD_SOURCE);
         String hCallbackSource = readSource(
                 "src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java");
@@ -142,7 +142,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindApplicationLogsPackageContextIdentityBeforeMakeApplication() throws Exception {
-        String source = readBActivityThreadSource();
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int enableRedirect = source.indexOf("IOCore.get().enableRedirect(packageContext)");
         int contextLog = source.indexOf("logContextIdentity(\"beforeMakeApplication\", packageContext, packageName)");
@@ -167,7 +167,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
     @Test
     public void bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling() throws Exception {
-        String activityThreadSource = readBActivityThreadSource();
+        String activityThreadSource = readSource(B_ACTIVITY_THREAD_SOURCE);
         String hCallbackSource = readSource(
                 "src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/HCallbackProxy.java");
@@ -232,24 +232,4 @@ public class BActivityThreadAppComponentFactorySourceTest {
                 loadedApkMirror.contains("void setCompatibilityInfo(@BParamClassName(\"android.content.res.CompatibilityInfo\") Object compatInfo)"));
     }
 
-    private static String readBActivityThreadSource() throws Exception {
-        return readSource(
-                "src/main/java/top/niunaijun/blackbox/app/BActivityThread.java",
-                "Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
-    }
-
-    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path moduleCandidate = dir.resolve(moduleRelativePath);
-            if (Files.isRegularFile(moduleCandidate)) {
-                return new String(Files.readAllBytes(moduleCandidate), StandardCharsets.UTF_8);
-            }
-            Path rootCandidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(rootCandidate)) {
-                return new String(Files.readAllBytes(rootCandidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
 }

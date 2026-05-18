@@ -14,6 +14,7 @@ import top.niunaijun.blackbox.utils.Slog;
 
 public class ServiceManagerProxy implements IInjectHook {
     private static final String TAG = "ServiceManagerProxy";
+    private static final String ANDROID_SERVICE_MANAGER = "android.os.ServiceManager";
     private static final String PACKAGE_SERVICE = "package";
     private static final String SERVICE_MANAGER = "servicemanager";
     private static final String ISERVICE_MANAGER = "android.os.IServiceManager";
@@ -21,7 +22,7 @@ public class ServiceManagerProxy implements IInjectHook {
     @Override
     public void injectHook() {
         try {
-            Class<?> serviceManager = Class.forName("android.os.ServiceManager");
+            Class<?> serviceManager = Class.forName(ANDROID_SERVICE_MANAGER);
             hookServiceLookup(serviceManager, "getService");
             hookServiceLookup(serviceManager, "checkService");
             hookServiceLookup(serviceManager, "waitForService");
@@ -62,7 +63,7 @@ public class ServiceManagerProxy implements IInjectHook {
             return null;
         }
         String name = (String) args[0];
-        if (!"package".equals(name)) {
+        if (!PACKAGE_SERVICE.equals(name)) {
             return null;
         }
         Map<String, IBinder> services = BRServiceManager.get().sCache();

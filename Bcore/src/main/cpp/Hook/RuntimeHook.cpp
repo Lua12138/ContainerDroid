@@ -6,6 +6,7 @@
 #import "JniHook/JniHook.h"
 #include "BoxCore.h"
 #include "IO.h"
+#include "Utils/NativeProperty.h"
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -17,7 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/system_properties.h>
 #include <unistd.h>
 
 #include <string>
@@ -85,20 +85,8 @@ bool contains(const char *value, const char *needle) {
     return value != nullptr && needle != nullptr && strstr(value, needle) != nullptr;
 }
 
-bool isTruthyPropertyValue(const char *value) {
-    return strcmp(value, "1") == 0
-           || strcmp(value, "true") == 0
-           || strcmp(value, "TRUE") == 0
-           || strcmp(value, "yes") == 0
-           || strcmp(value, "YES") == 0
-           || strcmp(value, "on") == 0
-           || strcmp(value, "ON") == 0;
-}
-
 bool isProcShimEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kProcShimProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kProcShimProperty);
 }
 
 bool samePath(const char *left, const char *right) {

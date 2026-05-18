@@ -59,10 +59,7 @@ public final class BinderPayloadSummary {
         } catch (Throwable ignored) {
             return null;
         } finally {
-            try {
-                reader.setDataPosition(originalPosition);
-            } catch (Throwable ignored) {
-            }
+            restoreDataPosition(reader, originalPosition);
         }
     }
 
@@ -85,10 +82,14 @@ public final class BinderPayloadSummary {
         } catch (Throwable ignored) {
             return null;
         } finally {
-            try {
-                reader.setDataPosition(originalPosition);
-            } catch (Throwable ignored) {
-            }
+            restoreDataPosition(reader, originalPosition);
+        }
+    }
+
+    private static void restoreDataPosition(Reader reader, int position) {
+        try {
+            reader.setDataPosition(position);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -101,10 +102,8 @@ public final class BinderPayloadSummary {
     }
 
     private static boolean skipInterfaceToken(Reader reader, String descriptor) {
-        if (trySkipLegacyInterfaceToken(reader, descriptor)) {
-            return true;
-        }
-        return trySkipModernInterfaceToken(reader, descriptor);
+        return trySkipLegacyInterfaceToken(reader, descriptor)
+                || trySkipModernInterfaceToken(reader, descriptor);
     }
 
     private static boolean trySkipLegacyInterfaceToken(Reader reader, String descriptor) {

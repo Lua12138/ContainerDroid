@@ -22,7 +22,6 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
 #include <time.h>
@@ -33,6 +32,7 @@
 
 #include "../Log.h"
 #include "../RawSyscallTerminationProbe.h"
+#include "Utils/NativeProperty.h"
 #include "IO.h"
 
 #if defined(__LP64__)
@@ -549,69 +549,33 @@ bool endsWithPathPart(const char *path, const char *suffix) {
            && strcmp(path + path_len - suffix_len, suffix) == 0;
 }
 
-bool isTruthyPropertyValue(const char *value) {
-    return strcmp(value, "1") == 0
-           || strcmp(value, "true") == 0
-           || strcmp(value, "TRUE") == 0
-           || strcmp(value, "yes") == 0
-           || strcmp(value, "YES") == 0
-           || strcmp(value, "on") == 0
-           || strcmp(value, "ON") == 0;
-}
-
-bool isFalsyPropertyValue(const char *value) {
-    return strcmp(value, "0") == 0
-           || strcmp(value, "false") == 0
-           || strcmp(value, "FALSE") == 0
-           || strcmp(value, "no") == 0
-           || strcmp(value, "NO") == 0
-           || strcmp(value, "off") == 0
-           || strcmp(value, "OFF") == 0;
-}
-
 bool isProcShimEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kProcShimProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kProcShimProperty);
 }
 
 bool isTransientProcMapsEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kTransientProcMapsProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kTransientProcMapsProperty);
 }
 
 bool isProcMapsPathSanitizationEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    if (__system_property_get(kProcMapsPathSanitizeProperty, value) <= 0) {
-        return true;
-    }
-    return !isFalsyPropertyValue(value);
+    return blackbox::native_property::getBoolDefaultTrue(kProcMapsPathSanitizeProperty);
 }
 
 bool isProcessProbeEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kProcessProbeProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kProcessProbeProperty);
 }
 
 bool isFileProbeEnabled() {
-    char value[PROP_VALUE_MAX] = {};
     return isProcessProbeEnabled()
-           || (__system_property_get(kFileProbeProperty, value) > 0
-               && isTruthyPropertyValue(value));
+           || blackbox::native_property::getBool(kFileProbeProperty);
 }
 
 bool isDlsymReplacementEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kDlsymReplacementProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kDlsymReplacementProperty);
 }
 
 bool isDlsymProbeEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kDlsymProbeProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kDlsymProbeProperty);
 }
 
 bool shouldPatchDlsym() {
@@ -623,15 +587,11 @@ bool shouldPatchPthreadCreate() {
 }
 
 bool isDlopenProbeEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kDlopenProbeProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kDlopenProbeProperty);
 }
 
 bool isEarlyDlopenRepatchEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kEarlyDlopenRepatchProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kEarlyDlopenRepatchProperty);
 }
 
 bool shouldPatchDlopen() {
@@ -639,15 +599,11 @@ bool shouldPatchDlopen() {
 }
 
 bool isTerminationProbeEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kTerminationProbeProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kTerminationProbeProperty);
 }
 
 bool isTerminationMemoryDumpEnabled() {
-    char value[PROP_VALUE_MAX] = {};
-    return __system_property_get(kTerminationMemoryDumpProperty, value) > 0
-           && isTruthyPropertyValue(value);
+    return blackbox::native_property::getBool(kTerminationMemoryDumpProperty);
 }
 
 bool isNativeTerminationShieldEnabled() {

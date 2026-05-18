@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 
 public final class BinderMonitorConfig {
     private static final Pattern STRING_PATTERN = Pattern.compile("\"((?:\\\\.|[^\"])*)\"");
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("-?\\d+");
 
     private final boolean enabled;
     private final Set<String> packages;
@@ -56,9 +57,9 @@ public final class BinderMonitorConfig {
         this.watchDescriptors = immutableCopy(watchDescriptors);
         this.processes = immutableCopy(processes);
         this.watchMethods = immutableCopy(watchMethods);
-        this.watchCodes = immutableIntegerCopy(watchCodes);
-        this.watchFlags = immutableIntegerCopy(watchFlags);
-        this.watchThreads = immutableIntegerCopy(watchThreads);
+        this.watchCodes = immutableCopy(watchCodes);
+        this.watchFlags = immutableCopy(watchFlags);
+        this.watchThreads = immutableCopy(watchThreads);
         this.maxRingEvents = Math.max(1, maxRingEvents);
         this.output = output == null || output.length() == 0 ? "jsonl" : output;
         this.logcat = sanitizeLogcat(logcat);
@@ -102,15 +103,12 @@ public final class BinderMonitorConfig {
         if (file == null || !file.isFile()) {
             return defaults;
         }
-        BufferedReader reader = new BufferedReader(new FileReader(file));
         StringBuilder builder = new StringBuilder((int) Math.min(file.length(), 1024 * 1024));
-        try {
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 builder.append(line).append('\n');
             }
-        } finally {
-            reader.close();
         }
         return fromJson(builder.toString(), defaults);
     }
@@ -198,6 +196,25 @@ public final class BinderMonitorConfig {
         return logcat;
     }
 
+    public BinderMonitorConfig withEnabled(boolean enabled) {
+        return new BinderMonitorConfig(
+                enabled,
+                packages,
+                recordStack,
+                recordProxy,
+                recordNative,
+                recordIoctl,
+                watchDescriptors,
+                processes,
+                watchMethods,
+                watchCodes,
+                watchFlags,
+                watchThreads,
+                maxRingEvents,
+                output,
+                logcat);
+    }
+
     public BinderMonitorConfig withLogcat(boolean logcat) {
         return new BinderMonitorConfig(
                 enabled,
@@ -245,14 +262,7 @@ public final class BinderMonitorConfig {
         return watchThreads;
     }
 
-    private static Set<String> immutableCopy(Set<String> values) {
-        if (values == null || values.isEmpty()) {
-            return Collections.emptySet();
-        }
-        return Collections.unmodifiableSet(new HashSet<>(values));
-    }
-
-    private static Set<Integer> immutableIntegerCopy(Set<Integer> values) {
+    private static <T> Set<T> immutableCopy(Set<T> values) {
         if (values == null || values.isEmpty()) {
             return Collections.emptySet();
         }
@@ -286,12 +296,12 @@ public final class BinderMonitorConfig {
     }
 
     private static Set<String> readStringSet(String json, String key, Set<String> defaultValue) {
-        Matcher arrayMatcher = Pattern.compile("\"" + key + "\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(json);
-        if (!arrayMatcher.find()) {
+        String arrayBody = readArrayBody(json, key);
+        if (arrayBody == null) {
             return defaultValue;
         }
         Set<String> values = new HashSet<>();
-        Matcher stringMatcher = STRING_PATTERN.matcher(arrayMatcher.group(1));
+        Matcher stringMatcher = STRING_PATTERN.matcher(arrayBody);
         while (stringMatcher.find()) {
             values.add(unescape(stringMatcher.group(1)));
         }
@@ -299,12 +309,12 @@ public final class BinderMonitorConfig {
     }
 
     private static Set<Integer> readIntegerSet(String json, String key, Set<Integer> defaultValue) {
-        Matcher arrayMatcher = Pattern.compile("\"" + key + "\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(json);
-        if (!arrayMatcher.find()) {
+        String arrayBody = readArrayBody(json, key);
+        if (arrayBody == null) {
             return defaultValue;
         }
         Set<Integer> values = new HashSet<>();
-        Matcher numberMatcher = Pattern.compile("-?\\d+").matcher(arrayMatcher.group(1));
+        Matcher numberMatcher = NUMBER_PATTERN.matcher(arrayBody);
         while (numberMatcher.find()) {
             try {
                 values.add(Integer.parseInt(numberMatcher.group()));
@@ -312,6 +322,11 @@ public final class BinderMonitorConfig {
             }
         }
         return values;
+    }
+
+    private static String readArrayBody(String json, String key) {
+        Matcher matcher = Pattern.compile("\"" + key + "\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(json);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     private static String unescape(String value) {

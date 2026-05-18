@@ -23,7 +23,7 @@ public class ContextDataDirProxy implements IInjectHook {
     @Override
     public void injectHook() {
         try {
-            Class<?> contextImpl = Class.forName("android.app.ContextImpl");
+            Class<?> contextImpl = Class.forName(CONTEXT_IMPL);
             hookDirMethod(contextImpl, "getDataDir", new DirResolver() {
                 @Override
                 public File resolve(File dataDir) {
@@ -122,7 +122,7 @@ public class ContextDataDirProxy implements IInjectHook {
             if (hostPackage.equals(packageName)) {
                 return false;
             }
-            return virtualPackage.equals(((Context) context).getPackageName());
+            return virtualPackage.equals(packageName);
         }
         return false;
     }

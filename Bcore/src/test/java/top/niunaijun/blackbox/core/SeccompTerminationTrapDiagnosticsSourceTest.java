@@ -2,13 +2,10 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class SeccompTerminationTrapDiagnosticsSourceTest {
 
@@ -133,21 +130,4 @@ public class SeccompTerminationTrapDiagnosticsSourceTest {
                 block.contains("SECCOMP_RET_ALLOW"));
     }
 
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
-
-    private static String readSource(String... candidates) throws Exception {
-        for (String candidate : candidates) {
-            Path path = Paths.get(candidate);
-            if (Files.exists(path)) {
-                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-            }
-        }
-        throw new IllegalArgumentException("Missing source: " + candidates[0]);
-    }
 }

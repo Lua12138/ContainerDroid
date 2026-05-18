@@ -3,9 +3,6 @@ package top.niunaijun.blackbox.core;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -13,6 +10,8 @@ import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class RuntimeExecProxySourceTest {
 
@@ -269,25 +268,6 @@ public class RuntimeExecProxySourceTest {
         assertTrue("unhandled commands should only be logged when broad exec tracing is enabled",
                 runtimeBeforeCall.contains("if (shouldTraceSandboxExec())")
                         && processBuilderBeforeCall.contains("if (shouldTraceSandboxExec())"));
-    }
-
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
-
-    private static String readSource(String relativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(relativePath + " not found from " + current);
     }
 
     private static List<String> extractJavaStringLiterals(String source) {

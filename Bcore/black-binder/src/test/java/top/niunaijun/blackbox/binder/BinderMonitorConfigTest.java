@@ -67,16 +67,14 @@ public class BinderMonitorConfigTest {
         assertEquals(2048, config.getMaxRingEvents());
         assertEquals(BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED, config.isLogcat());
         assertFalse(config.withLogcat(false).isLogcat());
+        assertFalse(config.withEnabled(false).isEnabled());
     }
 
     @Test
     public void fromJsonFileOverridesDefaultsWhenFileExists() throws Exception {
         File file = File.createTempFile("binder-monitor", ".json");
-        FileWriter writer = new FileWriter(file);
-        try {
+        try (FileWriter writer = new FileWriter(file)) {
             writer.write("{\"enabled\":true,\"record_native\":true,\"record_ioctl\":true}");
-        } finally {
-            writer.close();
         }
 
         BinderMonitorConfig config = BinderMonitorConfig.fromJsonFile(file, BinderMonitorConfig.defaultConfig());

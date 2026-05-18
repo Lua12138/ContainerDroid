@@ -110,18 +110,23 @@ public final class BinderEvent implements JsonSerializable {
         if (driverCommand != null) {
             JsonUtils.appendString(builder, "driver_command", driverCommand);
         }
-        if (callStack != null && !callStack.isEmpty()) {
-            JsonUtils.appendName(builder, "call_stack");
-            builder.append('[');
-            for (int i = 0; i < callStack.size(); i++) {
-                if (i > 0) {
-                    builder.append(',');
-                }
-                builder.append('"').append(JsonUtils.escape(callStack.get(i))).append('"');
-            }
-            builder.append(']');
-        }
+        appendCallStack(builder);
         builder.append('}');
         return builder.toString();
+    }
+
+    private void appendCallStack(StringBuilder builder) {
+        if (callStack == null || callStack.isEmpty()) {
+            return;
+        }
+        JsonUtils.appendName(builder, "call_stack");
+        builder.append('[');
+        for (int i = 0; i < callStack.size(); i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append('"').append(JsonUtils.escape(callStack.get(i))).append('"');
+        }
+        builder.append(']');
     }
 }

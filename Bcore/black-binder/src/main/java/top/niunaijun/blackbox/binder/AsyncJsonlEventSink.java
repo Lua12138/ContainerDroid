@@ -43,16 +43,14 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
 
     @Override
     public void run() {
-        BufferedWriter writer = null;
-        try {
-            writer = createWriter();
+        try (BufferedWriter writer = createWriter()) {
             while (running || !queue.isEmpty()) {
                 JsonSerializable event = queue.poll(500, TimeUnit.MILLISECONDS);
                 if (event == null) {
                     continue;
                 }
                 String json = event.toJson();
-                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                if (shouldLogcat()) {
                     Log.d(TAG, json);
                 }
                 if (writer != null) {
@@ -63,15 +61,8 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
             }
         } catch (InterruptedException ignored) {
         } catch (IOException e) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 Log.e(TAG, "event writer failed", e);
-            }
-        } finally {
-            if (writer != null) {
-                try {
-                    writer.close();
-                } catch (IOException ignored) {
-                }
             }
         }
     }
@@ -82,7 +73,7 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
         }
         File parent = outputFile.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            if (shouldLogcat()) {
                 Log.w(TAG, "failed to create binder monitor directory: " + parent);
             }
         }

@@ -2,13 +2,10 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class NativeDexCookieDumpSourceTest {
 
@@ -63,22 +60,4 @@ public class NativeDexCookieDumpSourceTest {
                         && !isReadableMemoryRange.contains("fopen(\"/proc/self/maps\""));
     }
 
-    private static String readSource(String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
-
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
 }

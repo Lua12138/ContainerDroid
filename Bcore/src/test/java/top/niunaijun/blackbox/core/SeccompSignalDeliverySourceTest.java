@@ -2,13 +2,10 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class SeccompSignalDeliverySourceTest {
 
@@ -98,14 +95,6 @@ public class SeccompSignalDeliverySourceTest {
                 handler > log);
     }
 
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
-
     private static void assertTerminationOnlyBlock(String name, String block, String signalArg) {
         assertTrue(name + " should inspect its signal argument before swallowing",
                 block.contains("offsetof(struct seccomp_data, " + signalArg + ")"));
@@ -119,18 +108,4 @@ public class SeccompSignalDeliverySourceTest {
                 block.contains("SECCOMP_RET_ALLOW"));
     }
 
-    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path moduleCandidate = dir.resolve(moduleRelativePath);
-            if (Files.isRegularFile(moduleCandidate)) {
-                return new String(Files.readAllBytes(moduleCandidate), StandardCharsets.UTF_8);
-            }
-            Path rootCandidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(rootCandidate)) {
-                return new String(Files.readAllBytes(rootCandidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
 }

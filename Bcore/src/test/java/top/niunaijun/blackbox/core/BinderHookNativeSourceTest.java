@@ -2,18 +2,16 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class BinderHookNativeSourceTest {
 
     @Test
     public void nativeMonitorInstallsExplicitBpBinderTransactHook() throws Exception {
-        String source = readBinderHookSource();
+        String source = readSource(
+                "src/main/cpp/Hook/BinderHook.cpp",
+                "Bcore/src/main/cpp/Hook/BinderHook.cpp");
 
         assertTrue(source.contains("_ZN7android8BpBinder8transactEjRKNS_6ParcelEPS1_j"));
         assertTrue(source.contains("installBpBinderTransactHook"));
@@ -24,28 +22,15 @@ public class BinderHookNativeSourceTest {
 
     @Test
     public void ioctlMonitorParsesReadAndWriteBinderCommands() throws Exception {
-        String source = readBinderHookSource();
+        String source = readSource(
+                "src/main/cpp/Hook/BinderHook.cpp",
+                "Bcore/src/main/cpp/Hook/BinderHook.cpp");
 
         assertTrue(source.contains("inspectBinderReadBuffer"));
         assertTrue(source.contains("BR_TRANSACTION"));
         assertTrue(source.contains("BR_REPLY"));
         assertTrue(source.contains("transaction.target.handle"));
         assertTrue(source.contains("driverCommand"));
-    }
-
-    private static String readBinderHookSource() throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path moduleCandidate = dir.resolve("src/main/cpp/Hook/BinderHook.cpp");
-            if (Files.isRegularFile(moduleCandidate)) {
-                return new String(Files.readAllBytes(moduleCandidate), StandardCharsets.UTF_8);
-            }
-            Path rootCandidate = dir.resolve("Bcore/src/main/cpp/Hook/BinderHook.cpp");
-            if (Files.isRegularFile(rootCandidate)) {
-                return new String(Files.readAllBytes(rootCandidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError("BinderHook.cpp not found from " + current);
     }
 
     private static String configureBinderMonitorBody(String source) {

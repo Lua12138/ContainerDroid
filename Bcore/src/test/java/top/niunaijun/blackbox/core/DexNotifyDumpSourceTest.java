@@ -2,13 +2,10 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
+import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
 public class DexNotifyDumpSourceTest {
 
@@ -131,7 +128,7 @@ public class DexNotifyDumpSourceTest {
                 "});");
         String scheduler = sliceBetween(dexDumpProxy,
                 "public static void scheduleClassLoaderDump",
-                "private static void dumpClassLoader");
+                "private static void scheduleDexFileDump");
 
         assertTrue("Application.attach should schedule a generic ClassLoader dex dump at the real Application attach boundary",
                 afterCall.contains("dumpApplicationClassLoaderAfterAttach(callFrame.thisObject)"));
@@ -185,14 +182,6 @@ public class DexNotifyDumpSourceTest {
                         "void installTerminationTrapSeccompShield()").contains("installSignalHandler()"));
     }
 
-    private static String sliceBetween(String source, String startNeedle, String endNeedle) {
-        int start = source.indexOf(startNeedle);
-        int end = source.indexOf(endNeedle, start + startNeedle.length());
-        assertTrue(startNeedle + " should exist", start >= 0);
-        assertTrue(endNeedle + " should exist after " + startNeedle, end > start);
-        return source.substring(start, end);
-    }
-
     @Test
     public void nativeCoreDumpDexPathRedirectsVirtualDataPathsAndDumpsDexFileCookies() throws Exception {
         String source = readSource("Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java");
@@ -223,14 +212,4 @@ public class DexNotifyDumpSourceTest {
                 source.contains("/proc/self/mem") || source.contains("dumpProcessDex"));
     }
 
-    private static String readSource(String relativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path candidate = dir.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(relativePath + " not found from " + current);
-    }
 }

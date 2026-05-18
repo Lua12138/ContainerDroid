@@ -2,25 +2,19 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class FileMetadataProxySourceTest {
 
     @Test
     public void fileMetadataProxyHooksJavaFileSystemMetadataLayer() throws Exception {
-        Path proxyPath = sourcePath(
+        String source = readSource(
                 "src/main/java/top/niunaijun/blackbox/fake/service/FileMetadataProxy.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/FileMetadataProxy.java");
         assertTrue("FileMetadataProxy should exist for Java File metadata sanitization",
-                Files.exists(proxyPath));
-
-        String source = new String(Files.readAllBytes(proxyPath), StandardCharsets.UTF_8);
+                !source.isEmpty());
         String hookManager = readSource(
                 "src/main/java/top/niunaijun/blackbox/fake/hook/HookManager.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/hook/HookManager.java");
@@ -59,18 +53,5 @@ public class FileMetadataProxySourceTest {
         assertFalse("Vendor-only zero-suffixed guesses should not be installed when they only create skip-hook noise",
                 source.contains("Hook(env, clazz, \"checkAccess0\", \"(Ljava/io/File;I)Z\"")
                         || source.contains("Hook(env, clazz, \"getLength0\", \"(Ljava/io/File;)J\""));
-    }
-
-    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
-        return new String(Files.readAllBytes(sourcePath(moduleRelativePath, rootRelativePath)),
-                StandardCharsets.UTF_8);
-    }
-
-    private static Path sourcePath(String moduleRelativePath, String rootRelativePath) {
-        Path modulePath = Paths.get(moduleRelativePath);
-        if (Files.exists(modulePath)) {
-            return modulePath;
-        }
-        return Paths.get(rootRelativePath);
     }
 }

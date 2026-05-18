@@ -2,13 +2,9 @@ package top.niunaijun.blackbox.core;
 
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class BActivityThreadSeccompInstallSourceTest {
 
@@ -70,22 +66,6 @@ public class BActivityThreadSeccompInstallSourceTest {
         assertTrue("ApplicationAttachSeccompProxy should be installed after runtime exit hooks are available",
                 runtimeExit >= 0 && applicationAttach > runtimeExit);
     }
-
-    private static String readSource(String moduleRelativePath, String rootRelativePath) throws Exception {
-        Path current = Paths.get("").toAbsolutePath();
-        for (Path dir = current; dir != null; dir = dir.getParent()) {
-            Path moduleCandidate = dir.resolve(moduleRelativePath);
-            if (Files.isRegularFile(moduleCandidate)) {
-                return new String(Files.readAllBytes(moduleCandidate), StandardCharsets.UTF_8);
-            }
-            Path rootCandidate = dir.resolve(rootRelativePath);
-            if (Files.isRegularFile(rootCandidate)) {
-                return new String(Files.readAllBytes(rootCandidate), StandardCharsets.UTF_8);
-            }
-        }
-        throw new AssertionError(rootRelativePath + " not found from " + current);
-    }
-
     private static String methodBody(String source, String methodName) {
         String marker = methodName + "(";
         int name = source.indexOf(marker);
