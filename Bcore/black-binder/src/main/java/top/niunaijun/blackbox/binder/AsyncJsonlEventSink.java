@@ -52,7 +52,7 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
                     continue;
                 }
                 String json = event.toJson();
-                if (logcat) {
+                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
                     Log.d(TAG, json);
                 }
                 if (writer != null) {
@@ -63,7 +63,9 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
             }
         } catch (InterruptedException ignored) {
         } catch (IOException e) {
-            Log.e(TAG, "event writer failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                Log.e(TAG, "event writer failed", e);
+            }
         } finally {
             if (writer != null) {
                 try {
@@ -80,8 +82,14 @@ final class AsyncJsonlEventSink implements EventSink, Runnable {
         }
         File parent = outputFile.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            Log.w(TAG, "failed to create binder monitor directory: " + parent);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                Log.w(TAG, "failed to create binder monitor directory: " + parent);
+            }
         }
         return new BufferedWriter(new FileWriter(outputFile, true));
+    }
+
+    private boolean shouldLogcat() {
+        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && logcat;
     }
 }

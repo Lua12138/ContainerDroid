@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dalvik.system.DexFile;
 import top.canyie.pine.Pine;
 import top.canyie.pine.callback.MethodHook;
+import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.core.NativeCore;
@@ -33,6 +34,9 @@ public class DexDumpProxy implements IInjectHook {
 
     @Override
     public void injectHook() {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         synchronized (DexDumpProxy.class) {
             if (sInstalled) {
                 return;
@@ -125,6 +129,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void maybeInstallSeccompForStandaloneDexLoad(String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName();
         if (packageName == null) {
             return;
@@ -178,7 +185,8 @@ public class DexDumpProxy implements IInjectHook {
     public static void scheduleClassLoaderDump(final ClassLoader classLoader,
                                                final String packageName,
                                                final String sourceTag) {
-        if (classLoader == null || packageName == null || packageName.length() == 0) {
+        if (!isDexDumpEnabled()
+                || classLoader == null || packageName == null || packageName.length() == 0) {
             return;
         }
         scheduleDexLoadDump(sourceTag, new Runnable() {
@@ -194,6 +202,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void dumpClassLoader(ClassLoader classLoader, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName();
         if (packageName == null || classLoader == null) {
             return;
@@ -206,6 +217,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void dumpDexFile(DexFile dexFile, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName();
         if (packageName == null || dexFile == null) {
             return;
@@ -214,6 +228,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void scheduleDexFileDump(final DexFile dexFile, final String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         final String packageName = currentPackageName();
         if (packageName == null || dexFile == null) {
             return;
@@ -227,6 +244,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void dumpDexFileForPackage(DexFile dexFile, String packageName, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         try {
             NativeCore.dumpDexFile(dexFile, packageName, sourceTag);
         } catch (Throwable e) {
@@ -235,6 +255,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void scheduleStringPathArgs(Object[] args, final String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         final String packageName = currentPackageName();
         if (packageName == null || args == null) {
             return;
@@ -259,14 +282,27 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void scheduleDexLoadDump(String sourceTag, Runnable task) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         try {
-            sDexLoadDumpExecutor.schedule(task, DEX_LOAD_DUMP_DELAY_MS, TimeUnit.MILLISECONDS);
+            sDexLoadDumpExecutor.schedule(new Runnable() {
+                @Override
+                public void run() {
+                    if (isDexDumpEnabled()) {
+                        task.run();
+                    }
+                }
+            }, DEX_LOAD_DUMP_DELAY_MS, TimeUnit.MILLISECONDS);
         } catch (Throwable e) {
             Slog.d(TAG, "schedule dex dump failed: " + sourceTag + " " + e);
         }
     }
 
     private static void dumpStringPathArgs(Object[] args, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName();
         if (packageName == null || args == null) {
             return;
@@ -279,6 +315,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void dumpDexPathList(String value, String packageName, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         if (value == null || value.length() == 0) {
             return;
         }
@@ -296,6 +335,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void scheduleByteBufferArgs(Object[] args, final String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         final String packageName = currentPackageName();
         if (packageName == null || args == null) {
             return;
@@ -324,6 +366,9 @@ public class DexDumpProxy implements IInjectHook {
     }
 
     private static void dumpByteBufferArgs(Object[] args, String sourceTag) {
+        if (!isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName();
         if (packageName == null || args == null) {
             return;
@@ -334,6 +379,14 @@ public class DexDumpProxy implements IInjectHook {
             } else if (arg instanceof ByteBuffer[]) {
                 NativeCore.dumpDexByteBuffers((ByteBuffer[]) arg, packageName, sourceTag);
             }
+        }
+    }
+
+    private static boolean isDexDumpEnabled() {
+        try {
+            return BlackBoxCore.get().isDexDumpEnabled();
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 

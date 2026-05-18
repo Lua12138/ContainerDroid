@@ -65,6 +65,8 @@ public class BinderMonitorConfigTest {
         assertFalse(config.isRecordNative());
         assertFalse(config.isRecordIoctl());
         assertEquals(2048, config.getMaxRingEvents());
+        assertEquals(BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED, config.isLogcat());
+        assertFalse(config.withLogcat(false).isLogcat());
     }
 
     @Test

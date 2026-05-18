@@ -30,6 +30,14 @@ public abstract class ClientConfiguration {
         return true;
     }
 
+    public boolean isEnableDiagnosticLogcat() {
+        return true;
+    }
+
+    public boolean isEnableDexDump() {
+        return true;
+    }
+
     /**
      * This method is called when an internal application requests to install a new application.
      *

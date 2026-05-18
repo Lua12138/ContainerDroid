@@ -44,6 +44,11 @@ endif()
 
 add_library(pine SHARED ${PINE_SOURCES})
 
+if (NOT DEFINED PINE_LOGCAT_ENABLED)
+    set(PINE_LOGCAT_ENABLED 1)
+endif()
+target_compile_definitions(pine PRIVATE PINE_LOGCAT_ENABLED=${PINE_LOGCAT_ENABLED})
+
 find_library(log-lib log)
 # find_package(cxx REQUIRED CONFIG)
 

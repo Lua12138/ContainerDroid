@@ -59,20 +59,24 @@ public final class BlackBoxBinderMonitor {
             eventSink.close();
             eventSink = createSink(context, config);
 
-            Log.i(TAG, "Binder monitor init:"
-                    + " enabled=" + config.isEnabled()
-                    + " recordProxy=" + config.isRecordProxy()
-                    + " recordNative=" + config.isRecordNative()
-                    + " recordIoctl=" + config.isRecordIoctl()
-                    + " recordStack=" + config.isRecordStack()
-                    + " logcat=" + config.isLogcat()
-                    + " output=" + config.getOutput()
-                    + " packages=" + config.getPackages()
-                    + " watchDescriptors=" + config.getWatchDescriptors()
-                    + " virtualPackage=" + identity.getVirtualPackage()
-                    + " virtualProcess=" + identity.getVirtualProcess());
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logInfo("Binder monitor init:"
+                        + " enabled=" + config.isEnabled()
+                        + " recordProxy=" + config.isRecordProxy()
+                        + " recordNative=" + config.isRecordNative()
+                        + " recordIoctl=" + config.isRecordIoctl()
+                        + " recordStack=" + config.isRecordStack()
+                        + " logcat=" + config.isLogcat()
+                        + " output=" + config.getOutput()
+                        + " packages=" + config.getPackages()
+                        + " watchDescriptors=" + config.getWatchDescriptors()
+                        + " virtualPackage=" + identity.getVirtualPackage()
+                        + " virtualProcess=" + identity.getVirtualProcess());
+            }
             if (!config.isEnabled()) {
-                Log.i(TAG, "Binder monitor disabled by config; hooks not installed");
+                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                    logInfo("Binder monitor disabled by config; hooks not installed");
+                }
                 return;
             }
             installHooksLocked();
@@ -254,13 +258,17 @@ public final class BlackBoxBinderMonitor {
         try {
             mapping.registerJsonFile(file);
         } catch (Throwable e) {
-            Log.w(TAG, "load binder method map failed: " + file, e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("load binder method map failed: " + file, e);
+            }
         }
     }
 
     private static void installHooksLocked() {
         if (hooksInstalled) {
-            Log.i(TAG, "Binder monitor hooks already installed");
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logInfo("Binder monitor hooks already installed");
+            }
             return;
         }
         boolean writeInterfaceToken = hookWriteInterfaceToken();
@@ -269,12 +277,14 @@ public final class BlackBoxBinderMonitor {
         boolean binderProxyGetInterfaceDescriptor = hookBinderProxyGetInterfaceDescriptor();
         hooksInstalled = writeInterfaceToken || parcelRecycle
                 || binderProxyTransact || binderProxyGetInterfaceDescriptor;
-        Log.i(TAG, "Binder monitor hook install summary:"
-                + " hooksInstalled=" + hooksInstalled
-                + " writeInterfaceToken=" + writeInterfaceToken
-                + " parcelRecycle=" + parcelRecycle
-                + " binderProxyTransact=" + binderProxyTransact
-                + " binderProxyGetInterfaceDescriptor=" + binderProxyGetInterfaceDescriptor);
+        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+            logInfo("Binder monitor hook install summary:"
+                    + " hooksInstalled=" + hooksInstalled
+                    + " writeInterfaceToken=" + writeInterfaceToken
+                    + " parcelRecycle=" + parcelRecycle
+                    + " binderProxyTransact=" + binderProxyTransact
+                    + " binderProxyGetInterfaceDescriptor=" + binderProxyGetInterfaceDescriptor);
+        }
     }
 
     private static boolean hookWriteInterfaceToken() {
@@ -294,7 +304,9 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "hook Parcel.writeInterfaceToken failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("hook Parcel.writeInterfaceToken failed", e);
+            }
             return false;
         }
     }
@@ -310,7 +322,9 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "hook Parcel.recycle failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("hook Parcel.recycle failed", e);
+            }
             return false;
         }
     }
@@ -331,7 +345,9 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "hook BinderProxy.transact failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("hook BinderProxy.transact failed", e);
+            }
             return false;
         }
     }
@@ -352,7 +368,9 @@ public final class BlackBoxBinderMonitor {
             });
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "hook BinderProxy.getInterfaceDescriptor failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("hook BinderProxy.getInterfaceDescriptor failed", e);
+            }
             return false;
         }
     }
@@ -403,7 +421,9 @@ public final class BlackBoxBinderMonitor {
             return interceptor.onTransact(binderProxy, code, data, reply, flags, descriptor, method,
                     argsSummary);
         } catch (Throwable e) {
-            Log.w(TAG, "binder transact interceptor failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("binder transact interceptor failed", e);
+            }
             return false;
         }
     }
@@ -582,7 +602,9 @@ public final class BlackBoxBinderMonitor {
             writer.write(json);
             writer.write('\n');
         } catch (IOException e) {
-            Log.w(TAG, "write crash context failed", e);
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && shouldLogcat()) {
+                logWarn("write crash context failed", e);
+            }
         } finally {
             if (writer != null) {
                 try {
@@ -590,6 +612,25 @@ public final class BlackBoxBinderMonitor {
                 } catch (IOException ignored) {
                 }
             }
+        }
+    }
+
+    private static boolean shouldLogcat() {
+        BinderMonitorConfig localConfig = config;
+        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+                && localConfig != null
+                && localConfig.isLogcat();
+    }
+
+    private static void logInfo(String message) {
+        if (shouldLogcat()) {
+            Log.i(TAG, message);
+        }
+    }
+
+    private static void logWarn(String message, Throwable throwable) {
+        if (shouldLogcat()) {
+            Log.w(TAG, message, throwable);
         }
     }
 

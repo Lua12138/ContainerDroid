@@ -61,7 +61,7 @@ public final class BinderMonitorConfig {
         this.watchThreads = immutableIntegerCopy(watchThreads);
         this.maxRingEvents = Math.max(1, maxRingEvents);
         this.output = output == null || output.length() == 0 ? "jsonl" : output;
-        this.logcat = logcat;
+        this.logcat = sanitizeLogcat(logcat);
     }
 
     public static BinderMonitorConfig defaultConfig() {
@@ -75,7 +75,7 @@ public final class BinderMonitorConfig {
                 Collections.<String>emptySet(),
                 2048,
                 "jsonl",
-                true);
+                BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED);
     }
 
     public static BinderMonitorConfig fromJson(String json) {
@@ -198,6 +198,25 @@ public final class BinderMonitorConfig {
         return logcat;
     }
 
+    public BinderMonitorConfig withLogcat(boolean logcat) {
+        return new BinderMonitorConfig(
+                enabled,
+                packages,
+                recordStack,
+                recordProxy,
+                recordNative,
+                recordIoctl,
+                watchDescriptors,
+                processes,
+                watchMethods,
+                watchCodes,
+                watchFlags,
+                watchThreads,
+                maxRingEvents,
+                output,
+                logcat);
+    }
+
     public Set<String> getPackages() {
         return packages;
     }
@@ -238,6 +257,10 @@ public final class BinderMonitorConfig {
             return Collections.emptySet();
         }
         return Collections.unmodifiableSet(new HashSet<>(values));
+    }
+
+    private static boolean sanitizeLogcat(boolean requested) {
+        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && requested;
     }
 
     private static boolean readBoolean(String json, String key, boolean defaultValue) {

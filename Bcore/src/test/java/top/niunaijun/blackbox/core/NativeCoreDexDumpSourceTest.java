@@ -63,7 +63,10 @@ public class NativeCoreDexDumpSourceTest {
         String source = readSource("Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
 
         assertTrue("BActivityThread should schedule dex dump after Application is created without blocking launch",
-                source.contains("DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName"));
+                source.contains("scheduleClassLoaderDumpIfEnabled(application.getClassLoader(), packageName"));
+        assertTrue("BActivityThread dex dump scheduling should be guarded by the sandbox dex dump option",
+                source.contains("private static void scheduleClassLoaderDumpIfEnabled")
+                        && source.contains("if (!BlackBoxCore.get().isDexDumpEnabled())"));
         assertFalse("BActivityThread should not synchronously dump dex on Application launch paths",
                 source.contains("NativeCore.dumpDex(application.getClassLoader(), packageName)"));
     }

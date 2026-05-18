@@ -127,6 +127,9 @@ public class NativeCore {
     }
 
     public static void dumpDex(ClassLoader classLoader, String packageName) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
         if (classLoader == null || packageName == null || BlackBoxCore.getContext() == null) {
             return;
         }
@@ -143,6 +146,9 @@ public class NativeCore {
     }
 
     public static void dumpDexPath(String sourcePath, String packageName, String sourceTag) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
         if (sourcePath == null || packageName == null || BlackBoxCore.getContext() == null) {
             return;
         }
@@ -152,6 +158,9 @@ public class NativeCore {
     }
 
     public static void dumpDexFile(DexFile dexFile, String packageName, String sourceTag) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
         if (dexFile == null || packageName == null || BlackBoxCore.getContext() == null) {
             return;
         }
@@ -166,6 +175,9 @@ public class NativeCore {
     }
 
     public static void dumpDexByteBuffers(ByteBuffer[] buffers, String packageName, String sourceTag) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
         if (buffers == null || packageName == null || BlackBoxCore.getContext() == null) {
             return;
         }

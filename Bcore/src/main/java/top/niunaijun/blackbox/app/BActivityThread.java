@@ -355,7 +355,9 @@ public class BActivityThread extends IBActivityThread.Stub {
         IOCore.get().enableRedirect(packageContext);
         ContextCompat.fixVirtual(packageContext, packageName);
         NativeCore.setNativeTerminationShieldPackage(packageName);
-        new DexDumpProxy().injectHook();
+        if (BlackBoxCore.get().isDexDumpEnabled()) {
+            new DexDumpProxy().injectHook();
+        }
 
         AppBindData bindData = new AppBindData();
         bindData.appInfo = applicationInfo;
@@ -377,6 +379,7 @@ public class BActivityThread extends IBActivityThread.Stub {
 
         mBoundApplication = bindData;
         BinderMonitorConfig binderMonitorConfig = BinderMonitorConfig.load(BlackBoxCore.getContext());
+        binderMonitorConfig = binderMonitorConfig.withLogcat(BlackBoxCore.get().isDiagnosticLogcatEnabled());
         BlackBoxBinderMonitor.init(
                 BlackBoxCore.getContext(),
                 binderMonitorConfig,
@@ -405,7 +408,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             ContextCompat.fix((Context) BRActivityThread.get(BlackBoxCore.mainThread()).getSystemContext());
             ContextCompat.fixVirtual(mInitialApplication, packageName);
             NativeCore.disableEarlyProcMapsShim();
-            DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName,
+            scheduleClassLoaderDumpIfEnabled(application.getClassLoader(), packageName,
                     "BActivityThread.afterMakeApplication");
             logApplicationBoundary("beforeInstallProviders", mInitialApplication, application, loadedApk);
             installProviders(mInitialApplication, bindData.processName, bindData.providers);
@@ -418,7 +421,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             mInitialApplication = syncInitialApplicationFromRuntime(mInitialApplication, loadedApk);
             application = mInitialApplication;
             ContextCompat.fixVirtual(mInitialApplication, packageName);
-            DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName,
+            scheduleClassLoaderDumpIfEnabled(application.getClassLoader(), packageName,
                     "BActivityThread.afterApplicationOnCreate");
             onAfterApplicationOnCreate(packageName, processName, application);
             logInitialApplicationState("afterApplicationOnCreate", mInitialApplication, loadedApk);
@@ -438,6 +441,14 @@ public class BActivityThread extends IBActivityThread.Stub {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private static void scheduleClassLoaderDumpIfEnabled(ClassLoader classLoader, String packageName,
+                                                         String sourceTag) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
+        DexDumpProxy.scheduleClassLoaderDump(classLoader, packageName, sourceTag);
     }
 
     public void ensureInitialApplicationState(String stage) {

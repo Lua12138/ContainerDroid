@@ -7,6 +7,7 @@ import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration
+import top.niunaijun.blackboxa.BuildConfig
 import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.biz.cache.AppSharedPreferenceDelegate
 import java.io.File
@@ -114,6 +115,14 @@ class BlackBoxLoader {
 
             override fun isEnableDaemonService(): Boolean {
                 return mDaemonEnable
+            }
+
+            override fun isEnableDiagnosticLogcat(): Boolean {
+                return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+            }
+
+            override fun isEnableDexDump(): Boolean {
+                return BuildConfig.BLACKBOX_DEX_DUMP_ENABLED
             }
 
             override fun requestInstallPackage(file: File?, userId: Int): Boolean {

@@ -193,6 +193,9 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     }
 
     private static void dumpReportedDexLoads(String methodName, Object[] args) {
+        if (!BlackBoxCore.get().isDexDumpEnabled()) {
+            return;
+        }
         String packageName = currentPackageName(firstStringArg(args));
         if (packageName == null) {
             return;

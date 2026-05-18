@@ -3,6 +3,28 @@ plugins {
     id 'kotlin-android'
 }
 
+def blackBoxBooleanOption = { String name, boolean defaultValue ->
+    if (project.hasProperty(name)) {
+        return project.property(name).toString().toBoolean()
+    }
+    if (rootProject.hasProperty(name)) {
+        return rootProject.property(name).toString().toBoolean()
+    }
+    if (rootProject.ext.has(name)) {
+        return rootProject.ext.get(name).toString().toBoolean()
+    }
+    return defaultValue
+}
+
+def blackboxDiagnosticLogcatEnabledValue =
+        blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)
+def blackboxDexDumpEnabledValue =
+        blackBoxBooleanOption('blackboxDexDumpEnabled', true)
+def blackboxDiagnosticLogcatMinifyRequested =
+        blackBoxBooleanOption('blackboxDiagnosticLogcatMinifyEnabled', false)
+def blackboxDiagnosticLogcatMinifyEnabled =
+        !blackboxDiagnosticLogcatEnabledValue || blackboxDiagnosticLogcatMinifyRequested
+
 android {
     compileSdkVersion 29
     buildToolsVersion "29.0.2"
@@ -15,6 +37,10 @@ android {
         versionName "2.1.0"
 
         flavorDimensions "BlackBox32"
+        buildConfigField "boolean", "BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED",
+                "${blackboxDiagnosticLogcatEnabledValue}"
+        buildConfigField "boolean", "BLACKBOX_DEX_DUMP_ENABLED",
+                "${blackboxDexDumpEnabledValue}"
     }
 
     productFlavors {
@@ -63,13 +89,19 @@ android {
         debug {
             debuggable true
             jniDebuggable true
-            minifyEnabled false
+            minifyEnabled blackboxDiagnosticLogcatMinifyEnabled
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (!blackboxDiagnosticLogcatEnabledValue) {
+                proguardFile 'proguard-diagnostic-logcat-disabled.pro'
+            }
         }
 
         release {
-            minifyEnabled false
+            minifyEnabled blackboxDiagnosticLogcatMinifyEnabled
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (!blackboxDiagnosticLogcatEnabledValue) {
+                proguardFile 'proguard-diagnostic-logcat-disabled.pro'
+            }
         }
     }
 

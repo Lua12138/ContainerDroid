@@ -154,9 +154,21 @@ public class BlackBoxCore extends ClientConfiguration {
                 }
             }
         }
-        PineConfig.debug = true;
+        PineConfig.debug = isDiagnosticLogcatEnabled();
         PineConfig.debuggable = true;
         HookManager.get().init();
+    }
+
+    public boolean isDiagnosticLogcatEnabled() {
+        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+                && mClientConfiguration != null
+                && mClientConfiguration.isEnableDiagnosticLogcat();
+    }
+
+    public boolean isDexDumpEnabled() {
+        return BuildConfig.BLACKBOX_DEX_DUMP_ENABLED
+                && mClientConfiguration != null
+                && mClientConfiguration.isEnableDexDump();
     }
 
     public void doCreate() {

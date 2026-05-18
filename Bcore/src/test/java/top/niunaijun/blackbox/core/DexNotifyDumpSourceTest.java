@@ -113,7 +113,9 @@ public class DexNotifyDumpSourceTest {
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/DexDumpProxy.java");
 
         assertTrue("DexFile.loadDex dumps must stay off the protected loader call stack",
-                proxy.contains("sDexLoadDumpExecutor.schedule(task, DEX_LOAD_DUMP_DELAY_MS, TimeUnit.MILLISECONDS)"));
+                proxy.contains("sDexLoadDumpExecutor.schedule(new Runnable()")
+                        && proxy.contains("task.run()")
+                        && proxy.contains("DEX_LOAD_DUMP_DELAY_MS, TimeUnit.MILLISECONDS"));
         assertTrue("DexFile.loadDex async dump worker should run immediately; delayed workers miss payloads when the app raw-kills itself within a few hundred ms",
                 proxy.contains("DEX_LOAD_DUMP_DELAY_MS = 0"));
     }

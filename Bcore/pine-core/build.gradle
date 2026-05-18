@@ -1,5 +1,21 @@
 apply plugin: 'com.android.library'
 
+def blackBoxBooleanOption = { String name, boolean defaultValue ->
+    if (project.hasProperty(name)) {
+        return project.property(name).toString().toBoolean()
+    }
+    if (rootProject.hasProperty(name)) {
+        return rootProject.property(name).toString().toBoolean()
+    }
+    if (rootProject.ext.has(name)) {
+        return rootProject.ext.get(name).toString().toBoolean()
+    }
+    return defaultValue
+}
+
+def blackboxDiagnosticLogcatEnabledValue =
+        blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)
+
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -12,12 +28,15 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles 'consumer-rules.pro'
+        buildConfigField "boolean", "BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED",
+                "${blackboxDiagnosticLogcatEnabledValue}"
 
         externalNativeBuild {
             cmake {
                 cFlags '-Wall -Wextra -Werror -fvisibility=hidden -fvisibility-inlines-hidden'
                 cppFlags '-std=c++17 -fno-exceptions -fno-rtti'
                 // arguments '-DANDROID_STL=none' // built-in libcxx has exception
+                arguments "-DPINE_LOGCAT_ENABLED=${blackboxDiagnosticLogcatEnabledValue ? 1 : 0}"
                 abiFilters 'armeabi-v7a', 'arm64-v8a'
                 targets 'pine'
             }

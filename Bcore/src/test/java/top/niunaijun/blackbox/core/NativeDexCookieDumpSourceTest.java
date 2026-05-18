@@ -25,11 +25,14 @@ public class NativeDexCookieDumpSourceTest {
                         && nativeCore.contains("dumpDexCookie(cookie, outputDir)"));
 
         assertTrue("BActivityThread should schedule the application class loader dump before virtual providers run",
-                activityThread.indexOf("DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName")
+                activityThread.indexOf("scheduleClassLoaderDumpIfEnabled(application.getClassLoader(), packageName")
                         < activityThread.indexOf("installProviders(mInitialApplication"));
         assertTrue("BActivityThread should schedule another dump after Application.onCreate in case the packer swaps dex later",
-                activityThread.lastIndexOf("DexDumpProxy.scheduleClassLoaderDump(application.getClassLoader(), packageName")
+                activityThread.lastIndexOf("scheduleClassLoaderDumpIfEnabled(application.getClassLoader(), packageName")
                         > activityThread.indexOf("AppInstrumentation.get().callApplicationOnCreate(application)"));
+        assertTrue("BActivityThread dump scheduling should honor the sandbox dex dump option",
+                activityThread.contains("scheduleClassLoaderDumpIfEnabled")
+                        && activityThread.contains("BlackBoxCore.get().isDexDumpEnabled()"));
         assertFalse("BActivityThread must not synchronously dump dex on lifecycle-critical paths",
                 activityThread.contains("NativeCore.dumpDex(application.getClassLoader(), packageName)"));
 

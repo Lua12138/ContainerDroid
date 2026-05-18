@@ -100,7 +100,8 @@ public final class Pine {
         if (sdkLevel < Build.VERSION_CODES.KITKAT)
             throw new RuntimeException("Unsupported android sdk level " + sdkLevel);
         else if (sdkLevel > Build.VERSION_CODES.R) {
-            Log.w(TAG, "Android version too high, not tested now...");
+            if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
+                Log.w(TAG, "Android version too high, not tested now...");
             if (sdkLevel >= 32 && isAtLeastPreReleaseCodename("Tiramisu")) {
                 // Android 13 (Tiramisu) Preview
                 sdkLevel = 32 + 1;
@@ -254,7 +255,7 @@ public final class Pine {
      * @throws IllegalArgumentException If {@code method} cannot be hooked, such as abstract method.
      */
     public static MethodHook.Unhook hook(Member method, MethodHook callback, boolean canInitDeclaringClass) {
-        if (PineConfig.debug)
+        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
             Log.d(TAG, "Hooking method " + method + " with callback " + callback);
 
         if (method == null) throw new NullPointerException("method == null");
@@ -341,7 +342,8 @@ public final class Pine {
             if (!(jni || proxy)) {
                 boolean compiled = compile0(thread, method);
                 if (!compiled) {
-                    Log.w(TAG, "Cannot compile the target method, force replacement mode.");
+                    if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
+                        Log.w(TAG, "Cannot compile the target method, force replacement mode.");
                     isInlineHook = false;
                 }
             } else {
@@ -631,7 +633,7 @@ public final class Pine {
             throws Throwable {
         // WARNING: DO NOT print thisObject or args, else the toString() method will be called on it
         // At this time the object may not "ready"
-        if (PineConfig.debug)
+        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
             /*Log.d(TAG, "handleCall: target=" + hookRecord.target + " thisObject=" +
                     thisObject + " args=" + Arrays.toString(args));*/
             Log.d(TAG, "handleCall for method " + hookRecord.target);
@@ -654,7 +656,8 @@ public final class Pine {
             try {
                 callback.beforeCall(callFrame);
             } catch (Throwable e) {
-                Log.e(TAG, "Unexpected exception occurred when calling " + callback.getClass().getName() + ".beforeCall()", e);
+                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
+                    Log.e(TAG, "Unexpected exception occurred when calling " + callback.getClass().getName() + ".beforeCall()", e);
                 // reset result (ignoring what the unexpectedly exiting callback did)
                 callFrame.resetResult();
                 continue;
@@ -684,7 +687,8 @@ public final class Pine {
             try {
                 callback.afterCall(callFrame);
             } catch (Throwable e) {
-                Log.e(TAG, "Unexpected exception occurred when calling " + callback.getClass().getName() + ".afterCall()", e);
+                if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug)
+                    Log.e(TAG, "Unexpected exception occurred when calling " + callback.getClass().getName() + ".afterCall()", e);
 
                 // reset to last result (ignoring what the unexpectedly exiting callback did)
                 if (lastThrowable == null)
@@ -706,7 +710,7 @@ public final class Pine {
      * @param message The message you want print.
      */
     public static void log(String message) {
-        if (PineConfig.debug) {
+        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug) {
             Log.i(TAG, message);
         }
     }
@@ -718,7 +722,7 @@ public final class Pine {
      * @see String#format(String, Object...)
      */
     public static void log(String fmt, Object... args) {
-        if (PineConfig.debug) {
+        if (BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug) {
             Log.i(TAG, String.format(fmt, args));
         }
     }
