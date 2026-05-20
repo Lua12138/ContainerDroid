@@ -74,16 +74,16 @@ public class BActivityThreadAppComponentFactorySourceTest {
     }
 
     @Test
-    public void bindApplicationConfiguresNativeVirtualUidBeforeTerminationShieldPackage() throws Exception {
+    public void bindApplicationConfiguresNativeVirtualUidBeforeNativeSandboxEnvironment() throws Exception {
         String source = readSource(B_ACTIVITY_THREAD_SOURCE);
 
         int nativeInit = source.indexOf("NativeCore.init(Build.VERSION.SDK_INT)");
         int setVirtualUid = source.indexOf("NativeCore.setVirtualUid(BActivityThread.getBUid())", nativeInit);
-        int terminationPackage = source.indexOf("NativeCore.setNativeTerminationShieldPackage(packageName)", nativeInit);
+        int sandboxEnvironment = source.indexOf("NativeCore.setNativeSandboxEnvironmentPackage(packageName)", nativeInit);
 
         assertTrue("BActivityThread should initialize NativeCore first", nativeInit >= 0);
-        assertTrue("BActivityThread should pass the virtual uid to native code before native termination shielding is configured",
-                setVirtualUid > nativeInit && setVirtualUid < terminationPackage);
+        assertTrue("BActivityThread should pass the virtual uid to native code before package-scoped native environment virtualization is configured",
+                setVirtualUid > nativeInit && setVirtualUid < sandboxEnvironment);
     }
 
     @Test

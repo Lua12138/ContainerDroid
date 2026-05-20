@@ -4,8 +4,10 @@
 namespace blackbox {
 namespace rawsyscall {
 
+void installRawSyscallEnvironmentProbe();
 void installRawSyscallTerminationProbe();
 void refreshRawSyscallProbeMaps();
+void setRawSyscallTerminationBlocking(bool enabled);
 
 }
 }

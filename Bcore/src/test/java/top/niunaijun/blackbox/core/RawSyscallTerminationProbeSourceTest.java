@@ -14,7 +14,9 @@ public class RawSyscallTerminationProbeSourceTest {
         String boxCore = readSource("Bcore/src/main/cpp/BoxCore.cpp");
         String attachProxy = readSource("Bcore/src/main/java/top/niunaijun/blackbox/fake/service/ApplicationAttachSeccompProxy.java");
 
+        assertTrue(nativeCore.contains("installRawSyscallEnvironmentProbe"));
         assertTrue(nativeCore.contains("installRawSyscallTerminationProbe"));
+        assertTrue(boxCore.contains("installRawSyscallEnvironmentProbe"));
         assertTrue(boxCore.contains("installRawSyscallTerminationProbe"));
         assertTrue(attachProxy.contains("BLACKBOX_ATTACH_RAW_SYSCALL_PROBE"));
         assertTrue(attachProxy.contains("blackbox.attach_raw_syscall_probe"));
@@ -116,7 +118,7 @@ public class RawSyscallTerminationProbeSourceTest {
                 "static void sigtrapHandler",
                 "static int protFromPerms");
 
-        assertTrue("blocked raw exit/exit_group should be distinguished from kill-style syscalls",
+        assertTrue("raw exit/exit_group should be distinguished from kill-style syscalls when explicit termination blocking is enabled",
                 source.contains("isProcessExitSyscall")
                         && handler.contains("isProcessExitSyscall(sysno)"));
         assertTrue("blocked raw exit should resume at LR instead of the instruction after svc, because bionic exit stubs place a fatal trap there",
@@ -124,6 +126,12 @@ public class RawSyscallTerminationProbeSourceTest {
                         && source.contains("mc.arm_pc = static_cast<unsigned long>(mc.arm_lr)"));
         assertTrue("kill/tgkill should still resume after the patched SVC instruction",
                 handler.contains("entry->address + entry->size"));
+        assertTrue("termination blocking must be explicitly enabled; the default environment probe should forward termination syscalls with real semantics",
+                source.contains("gBlockTerminationSyscalls")
+                        && source.contains("setRawSyscallTerminationBlocking(false)")
+                        && source.contains("setRawSyscallTerminationBlocking(true)")
+                        && handler.contains("if (!block_termination)")
+                        && handler.contains("emulateRawSyscall(sysno, mc)"));
     }
 
     @Test
@@ -161,17 +169,24 @@ public class RawSyscallTerminationProbeSourceTest {
         String shouldScanPath = sliceBetweenOrTail(source,
                 "static bool shouldScanPath(",
                 "static bool isPatchableAnonymousExecutableMap");
-        String install = sliceBetweenOrTail(source,
+        String environmentInstall = sliceBetweenOrTail(source,
+                "void installRawSyscallEnvironmentProbe()",
+                "void installRawSyscallTerminationProbe()");
+        String terminationInstall = sliceBetweenOrTail(source,
                 "void installRawSyscallTerminationProbe()",
                 "void refreshRawSyscallProbeMaps()");
         String refresh = sliceBetweenOrTail(source,
                 "void refreshRawSyscallProbeMaps()",
                 "} // namespace rawsyscall");
 
+        assertTrue("package-scoped environment installs should scan file-backed app code for raw file-syscall virtualization without enabling termination blocking",
+                environmentInstall.contains("setRawSyscallTerminationBlocking(false)")
+                        && environmentInstall.contains("scanProcessMaps(true);"));
         assertTrue("explicit diagnostic installs may still scan file-backed app code for full raw termination forensics",
                 source.contains("bool include_file_backed_app_code")
                         && shouldScanPath.contains("include_file_backed_app_code")
-                        && install.contains("scanProcessMaps(true);"));
+                        && terminationInstall.contains("setRawSyscallTerminationBlocking(true)")
+                        && terminationInstall.contains("scanProcessMaps(true);"));
         assertTrue("runtime pthread refresh should patch unpacked anonymous loader code only, avoiding file-backed .so text that protected loaders may integrity-check during JNI_OnLoad",
                 refresh.contains("scanProcessMaps(false);")
                         && shouldScanPath.contains("if (!include_file_backed_app_code) {\n        return false;\n    }"));

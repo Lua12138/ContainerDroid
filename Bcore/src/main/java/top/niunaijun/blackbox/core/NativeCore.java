@@ -73,13 +73,23 @@ public class NativeCore {
 
     public static native void installTerminationTrapSeccompShield();
 
+    public static native void installRawSyscallEnvironmentProbe();
+
     public static native void installRawSyscallTerminationProbe();
 
     public static native void setVirtualUid(int virtualUid);
 
+    public static native void setNativeSandboxEnvironmentPackage(String packageName);
+
     public static native void setNativeTerminationShieldPackage(String packageName);
 
     public static native void disableEarlyProcMapsShim();
+
+    public static native void enterNativeInternalFileProbe();
+
+    public static native void leaveNativeInternalFileProbe();
+
+    public static native boolean writeSanitizedProcMapsSnapshot(String outputPath, String packageName);
 
     public static native void enableBinderMonitor(boolean recordNative, boolean recordIoctl);
 

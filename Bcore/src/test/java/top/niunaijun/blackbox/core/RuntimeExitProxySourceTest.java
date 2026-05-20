@@ -9,7 +9,7 @@ import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 public class RuntimeExitProxySourceTest {
 
     @Test
-    public void runtimeExitProxyBlocksSandboxAbnormalExitAndRecordsStack() throws Exception {
+    public void runtimeExitProxyObservesSandboxExitAndBlocksOnlyWhenDiagnosticSwitchIsEnabled() throws Exception {
         String source = readSource(
                 "Bcore/src/main/java/top/niunaijun/blackbox/fake/service/RuntimeExitProxy.java");
 
@@ -25,10 +25,19 @@ public class RuntimeExitProxySourceTest {
         assertTrue(source.contains("hookProcessSignalMethod(processClass, \"sendSignalQuiet\", int.class, int.class)"));
         assertTrue(source.contains("shouldBlockSandboxExit"));
         assertTrue(source.contains("shouldBlockSandboxSignal"));
+        assertTrue("Java-level exit blocking must be explicit diagnostics, not the default runtime behavior",
+                source.contains("BLACKBOX_RUNTIME_EXIT_SHIELD")
+                        && source.contains("debug.blackbox.runtime_exit_shield")
+                        && source.contains("isRuntimeExitShieldEnabled()")
+                        && source.contains("DiagnosticSwitch.isTruthy"));
         assertTrue(source.contains("android.os.Process.myPid()"));
         assertTrue(source.contains("Thread.currentThread().getStackTrace()"));
         assertTrue(source.contains("BlackBoxBinderMonitor.recordProxyCall"));
         assertTrue(source.contains("callFrame.setResult(null)"));
+        assertTrue("System.exit/Runtime.exit calls should still be observable without being blocked by default",
+                source.contains("recordObservedExit")
+                        && source.contains("observed java runtime exit")
+                        && source.contains("if (shouldRecordSandboxExit(status))"));
         assertTrue(source.contains("recordBlockedProcessSignal"));
         assertTrue("Process signal hooks should record stack traces even when the signal is not blocked",
                 source.contains("recordObservedProcessSignal")

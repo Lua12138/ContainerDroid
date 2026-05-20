@@ -82,12 +82,14 @@ import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.fake.service.DexDumpProxy;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.fake.service.PackageManagerBinderInterceptor;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Reflector;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
+import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 
 /**
  * Created by Milk on 3/31/21.
@@ -99,6 +101,12 @@ import top.niunaijun.blackbox.utils.compat.StrictModeCompat;
  */
 public class BActivityThread extends IBActivityThread.Stub {
     public static final String TAG = "BActivityThread";
+    private static final String NATIVE_TERMINATION_SHIELD_ENV =
+            "BLACKBOX_NATIVE_TERMINATION_SHIELD";
+    private static final String NATIVE_TERMINATION_SHIELD_PROPERTY =
+            "blackbox.native_termination_shield";
+    private static final String NATIVE_TERMINATION_SHIELD_SYSTEM_PROPERTY =
+            "debug.blackbox.native_termination_shield";
 
     private static BActivityThread sBActivityThread;
     private AppBindData mBoundApplication;
@@ -354,7 +362,10 @@ public class BActivityThread extends IBActivityThread.Stub {
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
         ContextCompat.fixVirtual(packageContext, packageName);
-        NativeCore.setNativeTerminationShieldPackage(packageName);
+        NativeCore.setNativeSandboxEnvironmentPackage(packageName);
+        if (isNativeTerminationShieldDiagnosticEnabled()) {
+            NativeCore.setNativeTerminationShieldPackage(packageName);
+        }
         if (BlackBoxCore.get().isDexDumpEnabled()) {
             new DexDumpProxy().injectHook();
         }
@@ -449,6 +460,13 @@ public class BActivityThread extends IBActivityThread.Stub {
             return;
         }
         DexDumpProxy.scheduleClassLoaderDump(classLoader, packageName, sourceTag);
+    }
+
+    static boolean isNativeTerminationShieldDiagnosticEnabled() {
+        return DiagnosticSwitch.isTruthy(System.getenv(NATIVE_TERMINATION_SHIELD_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(NATIVE_TERMINATION_SHIELD_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(
+                        NATIVE_TERMINATION_SHIELD_SYSTEM_PROPERTY));
     }
 
     public void ensureInitialApplicationState(String stage) {

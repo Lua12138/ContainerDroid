@@ -62,10 +62,27 @@ public class IOCoreProcRedirectSourceTest {
                 source.contains("ensureProcMapsFile")
                         && source.contains("BEnvironment.getProcDir(appPid)")
                         && source.contains("new File(procDir, \"maps\")"));
+        assertTrue("Java /proc/self/maps refresh should prefer the native snapshot writer; Java line-by-line fallback was too slow once early direct libc maps hooks are active",
+                source.contains("writeSanitizedProcMapsFileNative(maps, BActivityThread.getAppPackageName())")
+                        && source.contains("NativeCore.writeSanitizedProcMapsSnapshot"));
         assertTrue("refreshing the virtual maps file must not recursively redirect its own /proc/self/maps read",
                 source.contains("sRefreshingProcMaps")
                         && source.contains("Boolean.TRUE.equals(sRefreshingProcMaps.get())")
                         && source.contains("sRefreshingProcMaps.remove()"));
+        int nativeBypassBegin = source.indexOf("beginInternalProcMapsRefresh()");
+        int mapsReader = source.indexOf("new BufferedReader(new FileReader(\"/proc/self/maps\"))");
+        int nativeBypassEnd = source.indexOf("endInternalProcMapsRefresh(nativeBypass)");
+        int mapsWriter = source.indexOf("new FileWriter(maps, false)");
+        assertTrue("refreshing the Java proc maps snapshot must also suppress native proc-maps virtualization on the current thread; otherwise early direct libc maps hooks make File.readText(/proc/self/maps) exceed the Tester timeout",
+                source.contains("beginInternalProcMapsRefresh()")
+                        && source.contains("NativeCore.enterNativeInternalFileProbe()")
+                        && source.contains("NativeCore.leaveNativeInternalFileProbe()")
+                        && nativeBypassBegin >= 0
+                        && mapsReader >= 0
+                        && nativeBypassEnd >= 0
+                        && mapsWriter >= 0
+                        && nativeBypassBegin < mapsReader
+                        && nativeBypassEnd > mapsWriter);
         assertTrue("virtual maps refresh must be throttled enough that repeated File/stat/access probes reuse the snapshot instead of rewriting it per call",
                 source.contains("PROC_MAPS_REFRESH_INTERVAL_MS = 60000L"));
         assertTrue("virtual maps should be marked read-only after refresh so File.canWrite resembles procfs",

@@ -6,11 +6,17 @@ import top.canyie.pine.Pine;
 import top.canyie.pine.callback.MethodHook;
 import top.niunaijun.blackbox.binder.BlackBoxBinderMonitor;
 import top.niunaijun.blackbox.fake.hook.IInjectHook;
+import top.niunaijun.blackbox.utils.DiagnosticSwitch;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.compat.SystemPropertiesCompat;
 
 public class RuntimeExitProxy implements IInjectHook {
     private static final String TAG = "RuntimeExitProxy";
     private static final String RUNTIME_SERVICE = "runtime";
+    private static final String RUNTIME_EXIT_SHIELD_ENV = "BLACKBOX_RUNTIME_EXIT_SHIELD";
+    private static final String RUNTIME_EXIT_SHIELD_PROPERTY = "blackbox.runtime_exit_shield";
+    private static final String RUNTIME_EXIT_SHIELD_SYSTEM_PROPERTY =
+            "debug.blackbox.runtime_exit_shield";
     private static final int SIGNAL_ABORT = 6;
     private static final int SIGNAL_KILL = 9;
     private static final int SIGNAL_TERM = 15;
@@ -46,10 +52,15 @@ public class RuntimeExitProxy implements IInjectHook {
                 @Override
                 public void beforeCall(Pine.CallFrame callFrame) {
                     int status = parseStatus(callFrame.args);
+                    String stack = stackTraceSummary();
                     if (!shouldBlockSandboxExit(status)) {
+                        if (shouldRecordSandboxExit(status)) {
+                            Slog.d(TAG, "observed " + owner.getName() + "." + methodName
+                                    + "(" + status + ") stack=" + stack);
+                            recordObservedExit(owner.getName(), methodName, status, stack);
+                        }
                         return;
                     }
-                    String stack = stackTraceSummary();
                     Slog.d(TAG, "blocked " + owner.getName() + "." + methodName
                             + "(" + status + ") stack=" + stack);
                     recordBlockedExit(owner.getName(), methodName, status, stack);
@@ -118,11 +129,16 @@ public class RuntimeExitProxy implements IInjectHook {
     }
 
     private static boolean shouldBlockSandboxExit(int status) {
+        return isRuntimeExitShieldEnabled();
+    }
+
+    private static boolean shouldRecordSandboxExit(int status) {
         return true;
     }
 
     private static boolean shouldBlockSandboxSignal(int pid, int signal) {
-        return pid == android.os.Process.myPid()
+        return isRuntimeExitShieldEnabled()
+                && pid == android.os.Process.myPid()
                 && isTerminationSignal(signal);
     }
 
@@ -132,6 +148,13 @@ public class RuntimeExitProxy implements IInjectHook {
 
     private static boolean isTerminationSignal(int signal) {
         return signal == SIGNAL_ABORT || signal == SIGNAL_KILL || signal == SIGNAL_TERM;
+    }
+
+    private static boolean isRuntimeExitShieldEnabled() {
+        return DiagnosticSwitch.isTruthy(System.getenv(RUNTIME_EXIT_SHIELD_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(RUNTIME_EXIT_SHIELD_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(
+                        RUNTIME_EXIT_SHIELD_SYSTEM_PROPERTY));
     }
 
     private static String stackTraceSummary() {
@@ -199,6 +222,20 @@ public class RuntimeExitProxy implements IInjectHook {
                 RuntimeExitProxy.class.getSimpleName(),
                 "pid=" + pid + ", signal=" + signal + ", stack=" + stack,
                 "observed android.os.Process signal",
+                "forwarded",
+                true,
+                false,
+                false);
+    }
+
+    private static void recordObservedExit(String owner, String methodName, int status, String stack) {
+        BlackBoxBinderMonitor.recordProxyCall(
+                RUNTIME_SERVICE,
+                owner,
+                methodName,
+                RuntimeExitProxy.class.getSimpleName(),
+                "status=" + status + ", stack=" + stack,
+                "observed java runtime exit",
                 "forwarded",
                 true,
                 false,

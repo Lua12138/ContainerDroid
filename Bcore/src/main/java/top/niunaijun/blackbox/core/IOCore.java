@@ -134,7 +134,8 @@ public class IOCore {
         }
         sRefreshingProcMaps.set(Boolean.TRUE);
         try {
-            if (writeSanitizedProcMapsFile(maps, BActivityThread.getAppPackageName())) {
+            if (writeSanitizedProcMapsFileNative(maps, BActivityThread.getAppPackageName())
+                    || writeSanitizedProcMapsFileJava(maps, BActivityThread.getAppPackageName())) {
                 sLastProcMapsRefreshMs = now;
             }
         } finally {
@@ -143,7 +144,19 @@ public class IOCore {
         return maps;
     }
 
-    private boolean writeSanitizedProcMapsFile(File maps, String packageName) {
+    private boolean writeSanitizedProcMapsFileNative(File maps, String packageName) {
+        File parent = maps.getParentFile();
+        if (parent != null && !parent.exists()) {
+            FileUtils.mkdirs(parent);
+        }
+        try {
+            return NativeCore.writeSanitizedProcMapsSnapshot(maps.getAbsolutePath(), packageName);
+        } catch (LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private boolean writeSanitizedProcMapsFileJava(File maps, String packageName) {
         File parent = maps.getParentFile();
         if (parent != null && !parent.exists()) {
             FileUtils.mkdirs(parent);
@@ -152,6 +165,7 @@ public class IOCore {
         if (maps.exists()) {
             maps.setWritable(true, true);
         }
+        boolean nativeBypass = beginInternalProcMapsRefresh();
         try (BufferedReader reader = new BufferedReader(new FileReader("/proc/self/maps"));
              BufferedWriter writer = new BufferedWriter(new FileWriter(maps, false))) {
             String line;
@@ -169,10 +183,32 @@ public class IOCore {
             }
         } catch (IOException ignored) {
             return false;
+        } finally {
+            endInternalProcMapsRefresh(nativeBypass);
         }
         maps.setReadable(true, false);
         maps.setWritable(false, false);
         return wroteAny;
+    }
+
+    private boolean beginInternalProcMapsRefresh() {
+        try {
+            NativeCore.enterNativeInternalFileProbe();
+            return true;
+        } catch (LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private void endInternalProcMapsRefresh(boolean nativeBypass) {
+        if (!nativeBypass) {
+            return;
+        }
+        try {
+            NativeCore.leaveNativeInternalFileProbe();
+        } catch (LinkageError ignored) {
+            // NativeCore may be unavailable in host-side source tests.
+        }
     }
 
     private String sanitizeProcMapsLine(String line, String packageName) {

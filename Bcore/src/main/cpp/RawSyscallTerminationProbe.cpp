@@ -45,6 +45,7 @@ struct RawSyscallRedirectTelemetry {
 };
 
 static std::atomic<bool> gInstalled(false);
+static std::atomic<bool> gBlockTerminationSyscalls(false);
 static volatile sig_atomic_t gPatchCount = 0;
 static PatchEntry gPatches[kMaxPatches];
 static struct sigaction gPreviousTrapAction = {};
@@ -401,6 +402,7 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
 
     const int sysno = static_cast<int>(mc.arm_r7);
     if (isTerminationSyscall(sysno, mc)) {
+        const bool block_termination = gBlockTerminationSyscalls.load();
         const uintptr_t pc_file_offset = patchedInstructionFileOffset(*entry);
         const uintptr_t lr = static_cast<uintptr_t>(mc.arm_lr);
         const uintptr_t lr_file_offset = fileOffsetForAddress(*entry, lr);
@@ -409,7 +411,7 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                             " lr=0x%lx sp=0x%lx r0=0x%lx r1=0x%lx r2=0x%lx r7=0x%lx"
                             " root=%d self=%d map=0x%" PRIxPTR "-0x%" PRIxPTR
                             " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR
-                            " lrFileOff=0x%" PRIxPTR " resume=%s path=%s",
+                            " lrFileOff=0x%" PRIxPTR " blocked=%d resume=%s path=%s",
                             syscallName(sysno),
                             sysno,
                             entry->address,
@@ -426,8 +428,17 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                             entry->map_offset,
                             pc_file_offset,
                             lr_file_offset,
-                            isProcessExitSyscall(sysno) ? "lr" : "next",
+                            block_termination ? 1 : 0,
+                            block_termination
+                                    ? (isProcessExitSyscall(sysno) ? "lr" : "next")
+                                    : "kernel",
                             entry->path);
+        if (!block_termination) {
+            long result = emulateRawSyscall(sysno, mc);
+            mc.arm_r0 = static_cast<unsigned long>(result);
+            mc.arm_pc = static_cast<unsigned long>(entry->address + entry->size);
+            return;
+        }
         mc.arm_r0 = 0;
         if (isProcessExitSyscall(sysno)) {
             resumeBlockedProcessExit(mc, entry);
@@ -723,8 +734,30 @@ static bool ensureRawSyscallProbeInstalled() {
 
 } // namespace
 
+void setRawSyscallTerminationBlocking(bool enabled) {
+    gBlockTerminationSyscalls.store(enabled);
+}
+
+void installRawSyscallEnvironmentProbe() {
+#if defined(__arm__)
+    setRawSyscallTerminationBlocking(false);
+    if (!ensureRawSyscallProbeInstalled()) {
+        return;
+    }
+    scanProcessMaps(true);
+    __android_log_print(ANDROID_LOG_DEBUG, kTag,
+                        "raw syscall environment probe installed root=%d patches=%d",
+                        static_cast<int>(gRootPid),
+                        static_cast<int>(gPatchCount));
+#else
+    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "raw syscall environment probe unsupported on this ABI");
+#endif
+}
+
 void installRawSyscallTerminationProbe() {
 #if defined(__arm__)
+    setRawSyscallTerminationBlocking(true);
     if (!ensureRawSyscallProbeInstalled()) {
         return;
     }

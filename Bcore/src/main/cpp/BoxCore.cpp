@@ -32,8 +32,12 @@
 void *fake_dlopen(const char *libpath, int flags);
 void *fake_dlsym(void *handle, const char *name);
 
+extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name);
 extern "C" void setNativeTerminationShieldPackage(const char *package_name);
 extern "C" void disableEarlyProcMapsShim();
+extern "C" void enterNativeInternalFileProbe();
+extern "C" void leaveNativeInternalFileProbe();
+extern "C" bool writeSanitizedProcMapsSnapshot(const char *output_path, const char *package_name);
 extern "C" void installNativeFileHooks();
 extern "C" void setNativeFileVirtualUid(int virtual_uid);
 
@@ -173,6 +177,10 @@ void installTerminationTrapSeccompShield(JNIEnv *env, jclass clazz) {
     blackbox::seccomp::installTerminationTrapSeccompShield();
 }
 
+void installRawSyscallEnvironmentProbe(JNIEnv *env, jclass clazz) {
+    blackbox::rawsyscall::installRawSyscallEnvironmentProbe();
+}
+
 void installRawSyscallTerminationProbe(JNIEnv *env, jclass clazz) {
     blackbox::rawsyscall::installRawSyscallTerminationProbe();
 }
@@ -180,6 +188,14 @@ void installRawSyscallTerminationProbe(JNIEnv *env, jclass clazz) {
 void setVirtualUid(JNIEnv *env, jclass clazz, jint virtualUid) {
     blackbox::seccomp::setVirtualUid(virtualUid);
     setNativeFileVirtualUid(virtualUid);
+}
+
+void configureNativeSandboxEnvironment(JNIEnv *env, jclass clazz, jstring packageName) {
+    const char *package_name = packageName == nullptr ? nullptr : env->GetStringUTFChars(packageName, JNI_FALSE);
+    setNativeSandboxEnvironmentPackage(package_name);
+    if (package_name != nullptr) {
+        env->ReleaseStringUTFChars(packageName, package_name);
+    }
 }
 
 void configureNativeTerminationShield(JNIEnv *env, jclass clazz, jstring packageName) {
@@ -192,6 +208,28 @@ void configureNativeTerminationShield(JNIEnv *env, jclass clazz, jstring package
 
 void disableNativeEarlyProcMapsShim(JNIEnv *env, jclass clazz) {
     disableEarlyProcMapsShim();
+}
+
+void enterNativeInternalFileProbeJni(JNIEnv *env, jclass clazz) {
+    enterNativeInternalFileProbe();
+}
+
+void leaveNativeInternalFileProbeJni(JNIEnv *env, jclass clazz) {
+    leaveNativeInternalFileProbe();
+}
+
+jboolean writeSanitizedProcMapsSnapshotJni(JNIEnv *env, jclass clazz, jstring outputPath,
+                                           jstring packageName) {
+    const char *output_path = outputPath == nullptr ? nullptr : env->GetStringUTFChars(outputPath, JNI_FALSE);
+    const char *package_name = packageName == nullptr ? nullptr : env->GetStringUTFChars(packageName, JNI_FALSE);
+    bool ok = writeSanitizedProcMapsSnapshot(output_path, package_name);
+    if (package_name != nullptr) {
+        env->ReleaseStringUTFChars(packageName, package_name);
+    }
+    if (output_path != nullptr) {
+        env->ReleaseStringUTFChars(outputPath, output_path);
+    }
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 void enableBinderMonitor(JNIEnv *env, jclass clazz, jboolean recordNative, jboolean recordIoctl) {
@@ -575,10 +613,15 @@ static JNINativeMethod gMethods[] = {
         {"installSeccompShield","()V",                                     (void *) installSeccompShield},
         {"installTerminationOnlySeccompShield", "()V",                     (void *) installTerminationOnlySeccompShield},
         {"installTerminationTrapSeccompShield", "()V",                     (void *) installTerminationTrapSeccompShield},
+        {"installRawSyscallEnvironmentProbe", "()V",                       (void *) installRawSyscallEnvironmentProbe},
         {"installRawSyscallTerminationProbe", "()V",                       (void *) installRawSyscallTerminationProbe},
         {"setVirtualUid",       "(I)V",                                    (void *) setVirtualUid},
+        {"setNativeSandboxEnvironmentPackage", "(Ljava/lang/String;)V",    (void *) configureNativeSandboxEnvironment},
         {"setNativeTerminationShieldPackage", "(Ljava/lang/String;)V",     (void *) configureNativeTerminationShield},
         {"disableEarlyProcMapsShim", "()V",                                (void *) disableNativeEarlyProcMapsShim},
+        {"enterNativeInternalFileProbe", "()V",                             (void *) enterNativeInternalFileProbeJni},
+        {"leaveNativeInternalFileProbe", "()V",                             (void *) leaveNativeInternalFileProbeJni},
+        {"writeSanitizedProcMapsSnapshot", "(Ljava/lang/String;Ljava/lang/String;)Z", (void *) writeSanitizedProcMapsSnapshotJni},
         {"enableBinderMonitor", "(ZZ)V",                                   (void *) enableBinderMonitor},
         {"dumpDexCookieNative", "(JLjava/lang/String;)Z",                   (void *) dumpDexCookieNative},
         {"init",                "(I)V",                                    (void *) init},

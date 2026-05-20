@@ -149,6 +149,7 @@ Fstat64Fn gOrigFstat64 = nullptr;
 #endif
 __thread char gSanitizedDladdrPath[PATH_MAX];
 char gNativeTerminationShieldPackage[128] = {};
+bool gNativeTerminationBlockingEnabled = false;
 pid_t gNativeTerminationShieldRootPid = 0;
 pid_t gNativeTerminationShieldRootPgid = 0;
 char gEarlyProcMapsPackage[128] = {};
@@ -606,8 +607,12 @@ bool isTerminationMemoryDumpEnabled() {
     return blackbox::native_property::getBool(kTerminationMemoryDumpProperty);
 }
 
-bool isNativeTerminationShieldEnabled() {
+bool isNativeSandboxEnvironmentConfigured() {
     return gNativeTerminationShieldPackage[0] != '\0';
+}
+
+bool isNativeTerminationShieldEnabled() {
+    return gNativeTerminationBlockingEnabled && isNativeSandboxEnvironmentConfigured();
 }
 
 bool isNativeVirtualUidConfigured() {
@@ -3027,13 +3032,30 @@ void replaceFirstNumericToken(std::string *value, const char *prefix, int replac
     value->replace(number_start, number_end - number_start, replacement_buffer);
 }
 
+bool isWritableExecutableProcMapsLine(const char *line) {
+    if (line == nullptr) {
+        return false;
+    }
+    const char *perms = strchr(line, ' ');
+    if (perms == nullptr) {
+        return false;
+    }
+    while (*perms == ' ') {
+        perms++;
+    }
+    return perms[0] != '\0'
+           && perms[1] == 'w'
+           && perms[2] == 'x';
+}
+
 bool shouldHideEarlyMapsLine(const char *line) {
     return containsPathPart(line, kBlackBoxHostPackagePrefix)
            || containsPathPart(line, "libblackbox.so")
            || containsPathPart(line, "libblackhook.so")
            || containsPathPart(line, "libblackdex.so")
            || containsPathPart(line, "libpine.so")
-           || containsPathPart(line, "[anon:pine codes]");
+           || containsPathPart(line, "[anon:pine codes]")
+           || isWritableExecutableProcMapsLine(line);
 }
 
 bool shouldHideEarlyRawMapsLine(const char *line) {
@@ -3312,11 +3334,16 @@ std::string sanitizeProcMapsPathOnlyLine(const char *line) {
     return sanitized;
 }
 
+std::string sanitizeEarlyMapsLineForPackage(const char *line, const char *package_name);
+
 std::string sanitizeEarlyMapsLine(const char *line) {
+    return sanitizeEarlyMapsLineForPackage(line, currentVirtualPackageForProcMaps());
+}
+
+std::string sanitizeEarlyMapsLineForPackage(const char *line, const char *package_name) {
     std::string sanitized(line == nullptr ? "" : line);
     replaceBlackBoxDataUserRoots(&sanitized);
-    const char *package_name = currentVirtualPackageForProcMaps();
-    if (package_name[0] != '\0') {
+    if (package_name != nullptr && package_name[0] != '\0') {
         replaceAll(&sanitized, kBlackBoxHostPackagePrefix, package_name);
     }
     replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
@@ -3545,7 +3572,7 @@ bool writeProcMapsPathOnlyFile(int fd) {
     return wrote_any;
 }
 
-bool writeEarlyProcMapsFile(int fd) {
+bool writeEarlyProcMapsFileForPackage(int fd, const char *package_name) {
     FILE *maps = openRealProcMapsFile();
     if (maps == nullptr) {
         return false;
@@ -3558,7 +3585,7 @@ bool writeEarlyProcMapsFile(int fd) {
         if (shouldHideEarlyRawMapsLine(line)) {
             continue;
         }
-        std::string sanitized = sanitizeEarlyMapsLine(line);
+        std::string sanitized = sanitizeEarlyMapsLineForPackage(line, package_name);
         if (shouldHideEarlyMapsLine(sanitized.c_str())) {
             continue;
         }
@@ -3573,6 +3600,10 @@ bool writeEarlyProcMapsFile(int fd) {
         return false;
     }
     return wrote_any;
+}
+
+bool writeEarlyProcMapsFile(int fd) {
+    return writeEarlyProcMapsFileForPackage(fd, currentVirtualPackageForProcMaps());
 }
 
 bool shouldHideAppVisibleMapsLine(const char *line) {
@@ -3683,7 +3714,7 @@ int openVirtualProcIdentityFdForRead(const char *pathname) {
 }
 
 bool shouldUseTransientProcMaps(const char *pathname) {
-    return isNativeTerminationShieldEnabled()
+    return isNativeSandboxEnvironmentConfigured()
            && !isProcShimEnabled()
            && isCurrentProcessProcPath(pathname, "maps");
 }
@@ -3814,21 +3845,24 @@ extern "C" void setNativeFileVirtualUid(int virtual_uid) {
     gNativeVirtualUid = virtual_uid;
 }
 
-extern "C" void setNativeTerminationShieldPackage(const char *package_name) {
+extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
     if (package_name == nullptr || package_name[0] == '\0') {
         resetEarlyProcMapsShim();
         gAppNativeLoaderMapsTrustUntilNs = 0;
         gNativeTerminationShieldPackage[0] = '\0';
+        gNativeTerminationBlockingEnabled = false;
         gNativeTerminationShieldRootPid = 0;
         gNativeTerminationShieldRootPgid = 0;
+        blackbox::rawsyscall::setRawSyscallTerminationBlocking(false);
         return;
     }
     gAppNativeLoaderMapsTrustUntilNs = 0;
     snprintf(gNativeTerminationShieldPackage, sizeof(gNativeTerminationShieldPackage), "%s", package_name);
-    installDirectLibcTerminationHooks();
+    gNativeTerminationBlockingEnabled = false;
     installDirectLibcProcMapsHooks();
     installDirectLibcMetadataHooks();
     installDirectLibcPthreadCreateHook();
+    blackbox::rawsyscall::installRawSyscallEnvironmentProbe();
     if (isProcShimEnabled()) {
         prepareEarlyProcMapsShim(package_name);
     } else {
@@ -3836,6 +3870,17 @@ extern "C" void setNativeTerminationShieldPackage(const char *package_name) {
     }
     gNativeTerminationShieldRootPid = getpid();
     gNativeTerminationShieldRootPgid = getpgrp();
+}
+
+extern "C" void setNativeTerminationShieldPackage(const char *package_name) {
+    if (package_name == nullptr || package_name[0] == '\0') {
+        setNativeSandboxEnvironmentPackage(package_name);
+        return;
+    }
+    setNativeSandboxEnvironmentPackage(package_name);
+    gNativeTerminationBlockingEnabled = true;
+    installDirectLibcTerminationHooks();
+    blackbox::rawsyscall::installRawSyscallTerminationProbe();
 }
 
 extern "C" void disableEarlyProcMapsShim() {
@@ -3852,6 +3897,35 @@ extern "C" void disableEarlyProcMapsShim() {
         ALOGD("early proc maps shim disabled protectedReady=%d",
               isProtectedProcMapsShimReady() ? 1 : 0);
     }
+}
+
+extern "C" void enterNativeInternalFileProbe() {
+    gInternalFileProbeDepth++;
+}
+
+extern "C" void leaveNativeInternalFileProbe() {
+    if (gInternalFileProbeDepth > 0) {
+        gInternalFileProbeDepth--;
+    }
+}
+
+extern "C" bool writeSanitizedProcMapsSnapshot(const char *output_path, const char *package_name) {
+    if (output_path == nullptr || output_path[0] == '\0') {
+        return false;
+    }
+    ScopedInternalFileProbe internal_probe;
+    int fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        return false;
+    }
+    bool ok = writeEarlyProcMapsFileForPackage(fd, package_name);
+    if (close(fd) != 0) {
+        ok = false;
+    }
+    if (!ok) {
+        unlink(output_path);
+    }
+    return ok;
 }
 
 bool shouldVirtualizeDirectProcMapsOpen(void *caller) {
@@ -4083,6 +4157,10 @@ extern "C" int open(const char *pathname, int flags, ...) {
     mode_t mode = takeModeArg(flags, args);
     va_end(args);
 
+    if (isInternalFileProbe()) {
+        return callOpen(resolveSymbol(&gOrigOpen, "open"), pathname, flags, mode);
+    }
+
     const char *redirected = redirectAbsolutePath(pathname);
     if (isReadOnlyOpenFlags(flags)) {
         int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));
@@ -4113,6 +4191,10 @@ extern "C" int open64(const char *pathname, int flags, ...) {
     mode_t mode = takeModeArg(flags, args);
     va_end(args);
 
+    if (isInternalFileProbe()) {
+        return callOpen(resolveSymbol(&gOrigOpen64, "open64"), pathname, flags, mode);
+    }
+
     const char *redirected = redirectAbsolutePath(pathname);
     if (isReadOnlyOpenFlags(flags)) {
         int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));
@@ -4141,6 +4223,14 @@ extern "C" int __open_2(const char *pathname, int flags) {
     if (needsModeArg(flags)) {
         errno = EINVAL;
         return -1;
+    }
+
+    if (isInternalFileProbe()) {
+        Open2Fn fn = resolveSymbol(&gOrigOpen2, "__open_2");
+        if (fn != nullptr) {
+            return fn(pathname, flags);
+        }
+        return callOpen(resolveSymbol(&gOrigOpen, "open"), pathname, flags, 0);
     }
 
     const char *redirected = redirectAbsolutePath(pathname);
@@ -4179,6 +4269,10 @@ extern "C" int openat(int dirfd, const char *pathname, int flags, ...) {
     va_start(args, flags);
     mode_t mode = takeModeArg(flags, args);
     va_end(args);
+
+    if (isInternalFileProbe()) {
+        return callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"), dirfd, pathname, flags, mode);
+    }
 
     bool use_absolute = false;
     ResolvedPath resolved_log = resolveOpenAtPathForLog(dirfd, pathname);
@@ -4219,6 +4313,14 @@ extern "C" int __openat_2(int dirfd, const char *pathname, int flags) {
     if (needsModeArg(flags)) {
         errno = EINVAL;
         return -1;
+    }
+
+    if (isInternalFileProbe()) {
+        OpenAt2Fn fn = resolveSymbol(&gOrigOpenAt2, "__openat_2");
+        if (fn != nullptr) {
+            return fn(dirfd, pathname, flags);
+        }
+        return callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"), dirfd, pathname, flags, 0);
     }
 
     bool use_absolute = false;
@@ -4759,6 +4861,9 @@ extern "C" long syscall(long number, ...) {
     va_end(va_args);
 
     SyscallFn fn = resolveSymbol(&gOrigSyscall, "syscall");
+    if (isInternalFileProbe()) {
+        return callSyscall(fn, number, args);
+    }
     switch (number) {
 #ifdef __NR_getuid
         case __NR_getuid:
