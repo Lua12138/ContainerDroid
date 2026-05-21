@@ -26,13 +26,14 @@ def blackboxDiagnosticLogcatMinifyEnabled =
         !blackboxDiagnosticLogcatEnabledValue || blackboxDiagnosticLogcatMinifyRequested
 
 android {
-    compileSdkVersion 29
-    buildToolsVersion "29.0.2"
+    namespace 'top.niunaijun.blackboxa'
+    compileSdk 29
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
         applicationId "top.niunaijun.blackboxa"
-        minSdkVersion 21
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk 21
+        targetSdk rootProject.ext.targetSdkVersion
         versionCode 12
         versionName "2.1.0"
 
@@ -107,40 +108,36 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
 
     kotlinOptions {
         jvmTarget = '1.8'
-    }
-    dexOptions {
-        preDexLibraries false
-        maxProcessCount 8
-        javaMaxHeapSize "4g"
+        languageVersion = '1.4'
+        apiVersion = '1.4'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-    aaptOptions {
-        cruncherEnabled = false
-        useNewCruncher = false
+    androidResources {
+        cruncherEnabled false
     }
     testOptions {
         unitTests.returnDefaultValues = true
     }
-    lintOptions {
+    lint {
         checkReleaseBuilds false
         abortOnError false
         warningsAsErrors false
         disable "UnusedResources", 'RestrictedApi'
-        textOutput "stdout"
         textReport false
-        check 'NewApi', 'InlinedApi'
+        checkOnly += ['NewApi', 'InlinedApi']
     }
 }
 
 
-tasks.withType(Javadoc) {
+tasks.withType(Javadoc).configureEach {
     options.addStringOption('Xdoclint:none', '-quiet')
     options.addStringOption('encoding', 'UTF-8')
     options.addStringOption('charSet', 'UTF-8')

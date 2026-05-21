@@ -1,6 +1,6 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
-    ext.kotlin_version = "1.4.31"
+    ext.kotlin_version = "1.9.23"
     repositories {
         jcenter()
         mavenCentral()
@@ -10,7 +10,7 @@ buildscript {
         maven { url 'https://maven.aliyun.com/repository/public/' }
     }
     dependencies {
-        classpath "com.android.tools.build:gradle:4.0.1"
+        classpath "com.android.tools.build:gradle:8.13.2"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -26,15 +26,16 @@ allprojects {
     }
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
 }
 
 
 ext {
     compileSdkVersion = 30
-    buildToolsVersion = "28.0.2"
+    buildToolsVersion = "35.0.0"
     targetSdkVersion = 30
+    ndkVersion = "21.0.6113669"
 
     versionName = '1.0'
     versionCode = 1

@@ -14,12 +14,13 @@ def blackBoxBooleanOption = { String name, boolean defaultValue ->
 }
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace 'top.niunaijun.blackbox.binder'
+    compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk 21
+        targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -40,18 +41,21 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    buildFeatures {
+        buildConfig true
+    }
+
     testOptions {
         unitTests.returnDefaultValues = true
     }
 
-    lintOptions {
+    lint {
         checkReleaseBuilds false
         abortOnError false
         warningsAsErrors false
         disable "UnusedResources", 'RestrictedApi'
-        textOutput "stdout"
         textReport false
-        check 'NewApi', 'InlinedApi'
+        checkOnly += ['NewApi', 'InlinedApi']
     }
 }
 

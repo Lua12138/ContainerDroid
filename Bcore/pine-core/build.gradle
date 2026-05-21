@@ -17,12 +17,14 @@ def blackboxDiagnosticLogcatEnabledValue =
         blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace 'top.canyie.pine'
+    compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
+    ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
-        minSdkVersion 19
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk 19
+        targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -57,6 +59,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig true
         // prefab true
     }
 }
