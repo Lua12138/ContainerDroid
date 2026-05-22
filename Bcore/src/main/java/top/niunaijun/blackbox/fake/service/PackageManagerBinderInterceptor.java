@@ -44,6 +44,9 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
     }
 
     private boolean writePackageInfoReply(Parcel reply, BinderPayloadSummary.PackageManagerCall call) {
+        if (!isVirtualInstalledPackage(call.getPackageName())) {
+            return false;
+        }
         int flags = (int) call.getFlags();
         PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
                 call.getPackageName(),
@@ -62,6 +65,9 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
     }
 
     private boolean writeApplicationInfoReply(Parcel reply, BinderPayloadSummary.PackageManagerCall call) {
+        if (!isVirtualInstalledPackage(call.getPackageName())) {
+            return false;
+        }
         int flags = (int) call.getFlags();
         ApplicationInfo applicationInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(
                 call.getPackageName(),
@@ -80,6 +86,9 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
     }
 
     private boolean writePackageUidReply(Parcel reply, BinderPayloadSummary.PackageManagerCall call) {
+        if (!isVirtualInstalledPackage(call.getPackageName())) {
+            return false;
+        }
         PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(
                 call.getPackageName(),
                 0,
@@ -92,6 +101,11 @@ public class PackageManagerBinderInterceptor implements BlackBoxBinderMonitor.Bi
         resetReplyForInlineBinderRead(reply);
         recordHandled(call, "uid=" + BActivityThread.getBUid());
         return true;
+    }
+
+    private static boolean isVirtualInstalledPackage(String packageName) {
+        return packageName != null
+                && BlackBoxCore.get().isInstalled(packageName, BActivityThread.getUserId());
     }
 
     private static void resetReplyForInlineBinderRead(Parcel reply) {

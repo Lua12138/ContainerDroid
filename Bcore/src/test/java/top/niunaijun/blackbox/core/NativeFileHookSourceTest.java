@@ -59,6 +59,12 @@ public class NativeFileHookSourceTest {
         String directSpecs = sliceBetween(source,
                 "DirectHookSpec specs[] = {",
                 "int patched = 0;");
+        String sandboxSetup = sliceBetween(source,
+                "void setNativeSandboxEnvironmentInternal",
+                "extern \"C\" void setNativeTerminationShieldPackage");
+        String shieldSetup = sliceBetween(source,
+                "extern \"C\" void setNativeTerminationShieldPackage",
+                "extern \"C\" void disableEarlyProcMapsShim");
 
         assertTrue("Direct libc termination calls resolved by dlsym/libffi should be hooked at the libc symbol entry, not by returning BlackBox pointers from dlsym",
                 source.contains("installDirectLibcTerminationHooks")
@@ -73,9 +79,16 @@ public class NativeFileHookSourceTest {
                         && source.contains("\"_exit\""));
         assertFalse("Bionic's libc syscall entry can be a special stub that Pine no-backup inline hooking corrupts; keep syscall coverage in the wrapper/PLT path, not the direct libc entry patch",
                 directSpecs.contains("{\"syscall\""));
-        assertTrue("The direct libc termination hook must be installed only by the explicit diagnostic termination shield, not by normal environment virtualization",
-                source.contains("setNativeTerminationShieldPackage")
-                        && source.contains("installDirectLibcTerminationHooks();"));
+        assertTrue("Non-blocking termination diagnostics should install direct libc termination hooks so self-exit callers can be logged without enabling the termination shield",
+                sandboxSetup.contains("if (isTerminationProbeEnabled())")
+                        && sandboxSetup.contains("installDirectLibcTerminationHooks();")
+                        && !sandboxSetup.contains("blackbox::rawsyscall::installRawSyscallTerminationProbe();"));
+        assertFalse("Default sandbox environment setup must not preinstall the raw syscall probe before protected loaders finish signal-handler setup; pthread entry refresh installs the generic probe lazily",
+                sandboxSetup.contains("blackbox::rawsyscall::installRawSyscallEnvironmentProbe();"));
+        assertTrue("The explicit termination shield should remain the only path that enables blocking and raw syscall termination trapping",
+                shieldSetup.contains("gNativeTerminationBlockingEnabled = true;")
+                        && shieldSetup.contains("installDirectLibcTerminationHooks();")
+                        && shieldSetup.contains("blackbox::rawsyscall::installRawSyscallTerminationProbe();"));
         assertTrue("The syscall wrapper must use a private raw kernel syscall path so inline-hooking libc syscall cannot recurse",
                 source.contains("rawKernelSyscall6")
                         && source.contains("callKernelSyscall(number, args)")
@@ -448,6 +461,55 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void procStatusVirtualizationReportsVirtualProcessNameInsteadOfHostStub() throws Exception {
+        String nativeFileHook = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String nativeCore = readSource(
+                "src/main/java/top/niunaijun/blackbox/core/NativeCore.java",
+                "Bcore/src/main/java/top/niunaijun/blackbox/core/NativeCore.java");
+        String boxCore = readSource(
+                "src/main/cpp/BoxCore.cpp",
+                "Bcore/src/main/cpp/BoxCore.cpp");
+        String activityThread = readSource(
+                "src/main/java/top/niunaijun/blackbox/app/BActivityThread.java",
+                "Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
+        String statusRewrite = sliceBetween(nativeFileHook,
+                "std::string rewriteProcStatusIdentityLine",
+                "std::string rewriteProcCgroupIdentityLine");
+
+        assertTrue("Native status virtualization must know the virtual process name, not only the package name, so /proc/self/status Name no longer exposes top.niunaijun.blackbox*:pN.",
+                nativeFileHook.contains("gNativeSandboxProcessName")
+                        && nativeFileHook.contains("setNativeSandboxEnvironment(const char *package_name, const char *process_name)")
+                        && nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName)")
+                        && boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;)V\"")
+                        && activityThread.contains("NativeCore.setNativeSandboxEnvironment(packageName, processName);"));
+        assertTrue("The status Name field should be rewritten to Android's task-comm-sized virtual process suffix, preserving real procfs formatting while hiding the host p0 stub.",
+                nativeFileHook.contains("linuxTaskCommForProcessName")
+                        && statusRewrite.contains("strncmp(line, \"Name:\", 5) == 0")
+                        && statusRewrite.contains("\"Name:\\t%s\\n\"")
+                        && !statusRewrite.contains("\"top.niunaijun.blackbox\""));
+    }
+
+    @Test
+    public void procStatusVirtualizationPreservesAndroidSignalMaskSemantics() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String statusRewrite = sliceBetween(source,
+                "std::string rewriteProcStatusIdentityLine",
+                "std::string rewriteProcCgroupIdentityLine");
+
+        assertFalse("A normal Android app can legitimately report realtime signals in SigCgt; status virtualization must not fabricate an ignored-signal bit while clearing the caught bit because that makes the sandbox less app-like.",
+                source.contains("kSandboxCaughtRealtimeSignal")
+                        || source.contains("normalizeProcStatusSignalMaskLine")
+                        || statusRewrite.contains("SigIgn:")
+                        || statusRewrite.contains("SigCgt:"));
+        assertFalse("Proc status signal-mask handling must remain generic and not special-case the observed protected sample.",
+                source.contains("com.bestv.tv.video.iqy.tjdx"));
+    }
+
+    @Test
     public void nativeFileHooksVirtualizeHostOwnedMetadataForRedirectedAppData() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -578,7 +640,7 @@ public class NativeFileHookSourceTest {
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
 
-        int configurePackage = source.indexOf("setNativeSandboxEnvironmentPackage");
+        int configurePackage = source.indexOf("setNativeSandboxEnvironmentInternal");
         int prepareEarly = source.indexOf("prepareEarlyProcMapsShim(package_name)", configurePackage);
         int redirectMaps = source.indexOf("isCurrentProcessProcPath(pathname, \"maps\")");
 
@@ -611,7 +673,7 @@ public class NativeFileHookSourceTest {
                 "src/main/cpp/Hook/RuntimeHook.cpp",
                 "Bcore/src/main/cpp/Hook/RuntimeHook.cpp");
         String packageSetup = sliceBetween(nativeFileHook,
-                "extern \"C\" void setNativeSandboxEnvironmentPackage",
+                "void setNativeSandboxEnvironmentInternal",
                 "extern \"C\" void disableEarlyProcMapsShim");
         String protectedSetup = sliceBetween(runtimeHook,
                 "void prepareProtectedProcShims",
@@ -665,6 +727,70 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void rawSvcProcSyntheticFdsRemainDiagnosticOptIn() throws Exception {
+        String nativeFileHook = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String rawProbe = readSource(
+                "src/main/cpp/RawSyscallTerminationProbe.cpp",
+                "Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String rawOpenHelper = sliceBetween(nativeFileHook,
+                "extern \"C\" int blackbox_open_virtual_proc_fd_for_raw_syscall",
+                "extern \"C\" void enterNativeInternalFileProbe");
+        String rawRedirect = sliceBetween(rawProbe,
+                "static long emulateRedirectableRawSyscall",
+                "static bool shouldLogNonTerminationTrap");
+
+        assertTrue("Raw SVC open/openat probes bypass libc PLT hooks, so they may call back into proc virtualization before falling through to the kernel.",
+                nativeFileHook.contains("blackbox_open_virtual_proc_fd_for_raw_syscall")
+                        && rawProbe.contains("extern \"C\" int blackbox_open_virtual_proc_fd_for_raw_syscall")
+                        && rawRedirect.contains("openVirtualProcFdForRawSyscall(sysno, args,")
+                        && rawRedirect.contains("if (virtual_proc_fd >= 0)")
+                        && rawRedirect.contains("return virtual_proc_fd;"));
+        assertTrue("Synthetic raw-SVC proc fds are memfd-backed rather than real procfs fds, so they must stay explicit diagnostic opt-in and default to kernel/IO redirection semantics.",
+                nativeFileHook.contains("debug.blackbox.raw_proc_virtual")
+                        && rawOpenHelper.contains("if (!isRawProcVirtualizationEnabled())")
+                        && rawOpenHelper.indexOf("if (!isRawProcVirtualizationEnabled())")
+                        < rawOpenHelper.indexOf("openTransientProcMapsFdForRead(resolved.path, caller)"));
+        assertTrue("When the diagnostic is explicitly enabled, the helper should preserve existing safety gates: only read-only opens are virtualized and relative openat paths are resolved before matching proc probes.",
+                rawOpenHelper.contains("if (!isReadOnlyOpenFlags(flags))")
+                        && rawOpenHelper.contains("ResolvedPath resolved = resolveOpenAtPathForLog(dirfd, pathname)")
+                        && rawOpenHelper.contains("openTransientProcMapsFdForRead(resolved.path, caller)")
+                        && rawOpenHelper.contains("openProcShimFdForRead(resolved.path)")
+                        && rawOpenHelper.contains("openVirtualProcIdentityFdForRead(resolved.path)"));
+        assertFalse("Raw SVC proc virtualization must stay generic and must not hardcode the observed sample.",
+                nativeFileHook.contains("com.bestv.tv.video.iqy.tjdx")
+                        || rawProbe.contains("com.bestv.tv.video.iqy.tjdx"));
+    }
+
+    @Test
+    public void rawSvcTrapHandlerInstallsAlternateStackForEachThread() throws Exception {
+        String rawProbe = readSource(
+                "src/main/cpp/RawSyscallTerminationProbe.cpp",
+                "Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String ensureInstalled = sliceBetween(rawProbe,
+                "static bool ensureRawSyscallProbeInstalled()",
+                "} // namespace");
+        String refresh = sliceBetween(rawProbe,
+                "void refreshRawSyscallProbeMaps()",
+                "} // namespace rawsyscall");
+
+        assertTrue("Raw SVC traps run on arbitrary protected app threads; SA_ONSTACK is ineffective unless each thread installs an alternate signal stack before maps are patched.",
+                rawProbe.contains("static __thread bool gThreadTrapAltStackInstalled")
+                        && rawProbe.contains("ensureCurrentThreadTrapAlternateStack")
+                        && rawProbe.contains("sigaltstack(&stack, nullptr)")
+                        && rawProbe.contains("kTrapAltStackSize"));
+        assertTrue("The first install path must configure the current thread alternate stack before installing the SIGTRAP handler.",
+                ensureInstalled.contains("ensureCurrentThreadTrapAlternateStack()")
+                        && ensureInstalled.indexOf("ensureCurrentThreadTrapAlternateStack()")
+                        < ensureInstalled.indexOf("installTrapHandler()"));
+        assertTrue("Refresh is called from app-owned pthread entrypoints, so it must also install an alternate stack for that current thread before newly patched SVC sites can trap.",
+                refresh.contains("ensureCurrentThreadTrapAlternateStack()")
+                        && refresh.indexOf("ensureCurrentThreadTrapAlternateStack()")
+                        < refresh.indexOf("scanProcessMaps(false)"));
+    }
+
+    @Test
     public void procMapsSandboxRuntimeHidingIsCallerScopedToAppOwnedNativeCode() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -687,6 +813,24 @@ public class NativeFileHookSourceTest {
                         && source.contains("\"libblackbox.so\"")
                         && source.contains("\"libpine.so\"")
                         && source.contains("gNativeTerminationShieldPackage"));
+    }
+
+    @Test
+    public void anonymousExecutableCodeMarksAppThreadsButDoesNotBroadenMapsVisibility() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String threadPolicy = sliceBetween(source,
+                "bool shouldMarkAppOwnedThread(",
+                "void rememberAppOwnedNativeThread(");
+        String appVisiblePolicy = sliceBetween(source,
+                "bool shouldUseAppVisibleProcMapsForCaller(",
+                "bool shouldLogAppOwnedNativeFileProbe(");
+
+        assertTrue("Anonymous executable regions can be legitimate unpacked app start routines, so they should still mark pthreads as app-owned.",
+                threadPolicy.contains("isAnonymousExecutableAppCode(start_routine)"));
+        assertFalse("A raw /proc/self/maps read whose immediate PC is anonymous shell code must not automatically receive the stronger app-visible maps view; require an app-owned thread marker, app file-backed caller, loader window, or recoverable app frame instead.",
+                appVisiblePolicy.contains("isAnonymousExecutableAppCode(caller)"));
     }
 
     @Test
@@ -714,7 +858,7 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
-    public void procMapsPathSanitizationKeepsRealRangesAndOnlyRewritesSandboxAppDataRootsByDefault() throws Exception {
+    public void procMapsPathSanitizationKeepsRealRangesWhileHidingSandboxArtifactsByDefault() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
@@ -733,13 +877,12 @@ public class NativeFileHookSourceTest {
                         && pathOnlySanitizer.contains("\"/blackbox/data/user/\"")
                         && !pathOnlySanitizer.contains("kBlackBoxHostPackagePrefix")
                         && !pathOnlySanitizer.contains("shouldHideEarlyMapsLine"));
-        assertTrue("The default maps writer should emit every real maps line after path-only sanitization",
+        assertTrue("The default maps writer should preserve real ranges, then filter only sandbox runtime artifacts and writable-executable runtime scratch mappings",
                 pathOnlyWriter.contains("FILE *maps = openRealProcMapsFile()")
+                        && pathOnlyWriter.contains("shouldHideEarlyRawMapsLine(line)")
                         && pathOnlyWriter.contains("std::string sanitized = sanitizeProcMapsPathOnlyLine(line)")
+                        && pathOnlyWriter.contains("shouldHideEarlyMapsLine(sanitized.c_str())")
                         && pathOnlyWriter.contains("writeExact(fd, sanitized.data(), sanitized.size())"));
-        assertFalse("Path-only maps writer must not drop hook/runtime mappings; that stronger hiding remains diagnostic-only",
-                pathOnlyWriter.contains("shouldHideEarlyRawMapsLine")
-                        || pathOnlyWriter.contains("shouldHideEarlyMapsLine"));
     }
 
     @Test
@@ -802,13 +945,19 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
-    public void appVisibleProcMapsSanitizerHidesWritableExecutableRuntimeMappings() throws Exception {
+    public void procMapsSanitizerKeepsWritableExecutableMappingsOnlyForAppOwnedNativeView() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
         String lineFilter = sliceBetween(source,
                 "bool shouldHideEarlyMapsLine",
                 "bool shouldHideEarlyRawMapsLine");
+        String pathOnlyWriter = sliceBetween(source,
+                "bool writeProcMapsPathOnlyFile",
+                "bool writeEarlyProcMapsFileForPackage");
+        String snapshotWriter = sliceBetween(source,
+                "extern \"C\" bool writeSanitizedProcMapsSnapshot",
+                "bool shouldVirtualizeDirectProcMapsOpen");
         String earlyWriter = sliceBetween(source,
                 "bool writeEarlyProcMapsFileForPackage",
                 "bool writeEarlyProcMapsFile");
@@ -816,16 +965,32 @@ public class NativeFileHookSourceTest {
                 "bool writeAppVisibleProcMapsFile",
                 "int createAnonymousProcFd");
 
-        assertTrue("App-visible native maps sanitizer should recognize rwx mappings instead of leaking packer/JIT scratch pages",
+        assertTrue("Public/path-only maps views are used for ordinary Java/framework callers, so they should hide transient writable-executable runtime mappings to match physical app expectations.",
                 source.contains("bool isWritableExecutableProcMapsLine(const char *line)")
                         && source.contains("perms[1] == 'w'")
-                        && source.contains("perms[2] == 'x'"));
-        assertTrue("The shared app-visible maps filter should drop writable-executable lines before writing sanitized maps",
-                lineFilter.contains("isWritableExecutableProcMapsLine(line)"));
+                        && source.contains("perms[2] == 'x'")
+                        && pathOnlyWriter.contains("isWritableExecutableProcMapsLine(sanitized.c_str())"));
+        assertTrue("Public/path-only maps views must also hide sandbox runtime artifacts; otherwise ordinary Java /proc/self/maps reads still expose the host package and native hook libraries.",
+                pathOnlyWriter.contains("shouldHideEarlyRawMapsLine(line)")
+                        && pathOnlyWriter.contains("shouldHideEarlyMapsLine(sanitized.c_str())"));
+        assertTrue("The IOCore Java /proc/self/maps redirect snapshot is consumed by ordinary Java File APIs, so the native snapshot writer must use the public/path-only maps writer instead of the stronger app-visible view.",
+                snapshotWriter.contains("writeProcMapsPathOnlyFile(fd)"));
+        assertFalse("Using the early/app-visible writer for IOCore snapshots preserves protected rwx mappings and makes ordinary Java maps reads diverge from the physical Tester baseline.",
+                snapshotWriter.contains("writeEarlyProcMapsFileForPackage(fd, package_name)"));
+        assertFalse("Real protected app code can legitimately execute from writable anonymous mappings; the shared early/app-visible filters must not blanket-drop rwx lines because shell code may verify its own /proc/self/maps entry.",
+                lineFilter.contains("isWritableExecutableProcMapsLine")
+                        || earlyWriter.contains("isWritableExecutableProcMapsLine")
+                        || appWriter.contains("isWritableExecutableProcMapsLine"));
+        assertTrue("The shared maps filter should still hide sandbox/hook runtime artifacts explicitly instead of using a broad rwx heuristic.",
+                lineFilter.contains("libblackbox.so")
+                        && lineFilter.contains("libblackhook.so")
+                        && lineFilter.contains("libblackdex.so")
+                        && lineFilter.contains("libpine.so")
+                        && lineFilter.contains("[anon:pine codes]"));
         assertTrue("Early maps writer should re-check the sanitized line so package/path rewrites cannot reveal hidden runtime mappings",
                 earlyWriter.contains("shouldHideEarlyRawMapsLine(line)")
                         && earlyWriter.contains("shouldHideEarlyMapsLine(sanitized.c_str())"));
-        assertTrue("App-visible maps writer should use the same writable-executable filter as the early protected view",
+        assertTrue("App-visible maps writer should use the same explicit sandbox artifact filter as the early protected view",
                 appWriter.contains("shouldHideAppVisibleMapsLine(line)")
                         && appWriter.contains("shouldHideEarlyMapsLine(sanitized.c_str())"));
     }
@@ -1080,6 +1245,50 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void nativeCrashProbeCapturesFaultContextWithoutBlockingProcessExit() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String sandboxSetup = sliceBetween(source,
+                "void setNativeSandboxEnvironmentInternal",
+                "extern \"C\" void setNativeSandboxEnvironment");
+        String crashHandler = sliceBetween(source,
+                "void nativeCrashProbeHandler",
+                "void installNativeCrashProbe");
+
+        assertTrue("Native crash diagnostics must be explicit opt-in and separate from termination shields",
+                source.contains("debug.blackbox.native_crash_probe")
+                        && source.contains("isNativeCrashProbeEnabled"));
+        assertTrue("Sandbox setup should install only the diagnostic crash probe when explicitly enabled, without enabling native termination blocking",
+                sandboxSetup.contains("if (isNativeCrashProbeEnabled())")
+                        && sandboxSetup.contains("installNativeCrashProbe();")
+                        && sandboxSetup.contains("gNativeTerminationBlockingEnabled = false;"));
+        assertTrue("Crash probe should capture synchronous native faults that bypass Java/libc termination wrappers",
+                source.contains("installNativeCrashProbeSignal(SIGSEGV")
+                        && source.contains("installNativeCrashProbeSignal(SIGBUS")
+                        && source.contains("installNativeCrashProbeSignal(SIGILL"));
+        assertTrue("Crash probe logs must include PC/LR/SP, fault address, si_code, and cached maps offsets for IDA correlation",
+                crashHandler.contains("native crash probe signal=%d")
+                        && crashHandler.contains("fault=%p")
+                        && crashHandler.contains("pc=%p")
+                        && crashHandler.contains("lr=%p")
+                        && crashHandler.contains("sp=%p")
+                        && crashHandler.contains("pcOff=0x%lx")
+                        && crashHandler.contains("pcMap=%s")
+                        && crashHandler.contains("lrOff=0x%lx")
+                        && crashHandler.contains("lrMap=%s"));
+        assertTrue("Crash probe must forward to the previous/default signal action instead of swallowing or converting the crash",
+                crashHandler.contains("forwardNativeCrashSignal(signo, info, context_raw);")
+                        && !crashHandler.contains("gNativeTerminationBlockingEnabled = true")
+                        && !crashHandler.contains("mc.arm_pc ="));
+        assertFalse("Crash diagnostics must remain sample agnostic",
+                source.contains("com.bestv")
+                        || source.contains("TelnetCommand")
+                        || source.contains("entryRunApplication")
+                        || source.contains("jiagu"));
+    }
+
+    @Test
     public void nativeTerminationBlockingDumpsRecentFileProbeRingForRootCauseCorrelation() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -1308,7 +1517,7 @@ public class NativeFileHookSourceTest {
         assertTrue("The Java proc-maps snapshot should have a native writer that reads real procfs under the same internal guard instead of depending on slow Java FileReader refreshes",
                 source.contains("extern \"C\" bool writeSanitizedProcMapsSnapshot(")
                         && source.contains("ScopedInternalFileProbe internal_probe")
-                        && source.contains("writeEarlyProcMapsFileForPackage(fd, package_name)")
+                        && source.contains("writeProcMapsPathOnlyFile(fd)")
                         && nativeCore.contains("native boolean writeSanitizedProcMapsSnapshot")
                         && boxCore.contains("{\"writeSanitizedProcMapsSnapshot\","));
     }
@@ -1376,6 +1585,12 @@ public class NativeFileHookSourceTest {
         String directOpenAt = sliceBetween(source,
                 "extern \"C\" int blackbox_direct_openat(",
                 "extern \"C\" int blackbox_direct_openat_2(");
+        String privateLibraryPolicy = sliceBetween(source,
+                "bool isAppPrivateNativeLibraryPath(",
+                "void markAppNativeLoaderMapsWindow(");
+        String loaderMarker = sliceBetween(source,
+                "void maybeMarkAppNativeLoaderMapsWindow(",
+                "bool hasAppOwnedNativeFrame(");
 
         assertTrue("App-owned native library loads should open a bounded maps trust window without naming any target package or library",
                 source.contains("gAppNativeLoaderMapsTrustUntilNs")
@@ -1409,6 +1624,14 @@ public class NativeFileHookSourceTest {
         assertTrue("Successful app-owned .so opens should mark the window for both direct open and direct openat paths before later /proc/self/maps reads",
                 directOpen.contains("maybeMarkAppNativeLoaderMapsWindow(pathname, redirected, result);")
                         && directOpenAt.contains("maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);"));
+        assertTrue("The loader trust window should be opened only for unpacked/private app native libraries; ordinary /data/app installed JNI libraries should not make unrelated Java maps reads app-visible.",
+                source.contains("isAppPrivateNativeLibraryPath")
+                        && privateLibraryPolicy.contains("/blackbox/data/user/")
+                        && privateLibraryPolicy.contains("/data/user/")
+                        && privateLibraryPolicy.contains("/data/data/")
+                        && !privateLibraryPolicy.contains("/data/app/")
+                        && loaderMarker.contains("isAppPrivateNativeLibraryPath(pathname)")
+                        && loaderMarker.contains("isAppPrivateNativeLibraryPath(redirected)"));
     }
 
     @Test
@@ -1451,7 +1674,7 @@ public class NativeFileHookSourceTest {
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
         String setup = sliceBetween(source,
-                "extern \"C\" void setNativeSandboxEnvironmentPackage(",
+                "void setNativeSandboxEnvironmentInternal(",
                 "extern \"C\" void setNativeTerminationShieldPackage(");
         String installer = sliceBetween(source,
                 "void installDirectLibcPthreadCreateHook()",
@@ -1520,7 +1743,7 @@ public class NativeFileHookSourceTest {
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
         String setup = sliceBetween(source,
-                "extern \"C\" void setNativeSandboxEnvironmentPackage(",
+                "void setNativeSandboxEnvironmentInternal(",
                 "extern \"C\" void setNativeTerminationShieldPackage(");
         String installer = sliceBetween(source,
                 "void installDirectLibcMetadataHooks()",
@@ -1784,19 +2007,22 @@ public class NativeFileHookSourceTest {
                 "src/main/java/top/niunaijun/blackbox/app/BActivityThread.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
 
-        assertTrue("NativeCore should expose package-scoped native environment virtualization separately from termination shielding",
-                nativeCore.contains("native void setNativeSandboxEnvironmentPackage(String packageName)"));
+        assertTrue("NativeCore should expose process-aware native environment virtualization separately from termination shielding",
+                nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName)")
+                        && nativeCore.contains("native void setNativeSandboxEnvironmentPackage(String packageName)"));
         assertTrue("NativeCore should keep the package-scoped native termination shield only as an explicit diagnostic",
                 nativeCore.contains("native void setNativeTerminationShieldPackage(String packageName)"));
         assertTrue("BoxCore should register the native sandbox environment JNI bridge",
-                boxCore.contains("{\"setNativeSandboxEnvironmentPackage\",")
+                boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;)V\"")
+                        && boxCore.contains("setNativeSandboxEnvironment(package_name, process_name)")
+                        && boxCore.contains("{\"setNativeSandboxEnvironmentPackage\",")
                         && boxCore.contains("setNativeSandboxEnvironmentPackage(package_name)"));
         assertTrue("BoxCore should keep the native termination shield JNI bridge for explicit diagnostics",
                 boxCore.contains("{\"setNativeTerminationShieldPackage\",")
                         && boxCore.contains("setNativeTerminationShieldPackage(package_name)"));
 
         int enableRedirect = activityThread.indexOf("IOCore.get().enableRedirect(packageContext)");
-        int setEnvironment = activityThread.indexOf("NativeCore.setNativeSandboxEnvironmentPackage(packageName)");
+        int setEnvironment = activityThread.indexOf("NativeCore.setNativeSandboxEnvironment(packageName, processName)");
         int setShield = activityThread.indexOf("NativeCore.setNativeTerminationShieldPackage(packageName)");
         int makeApplication = activityThread.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
         int diagnosticGate = activityThread.indexOf("isNativeTerminationShieldDiagnosticEnabled()");

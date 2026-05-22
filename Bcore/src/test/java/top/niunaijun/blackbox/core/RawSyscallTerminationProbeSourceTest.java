@@ -164,6 +164,38 @@ public class RawSyscallTerminationProbeSourceTest {
     }
 
     @Test
+    public void rawSyscallProbeLogsPassthroughFilePathsForFailedEnvironmentPredicates() throws Exception {
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String telemetry = sliceBetweenOrTail(source,
+                "struct RawSyscallRedirectTelemetry",
+                "static std::atomic<bool> gInstalled");
+        String handler = sliceBetweenOrTail(source,
+                "static void sigtrapHandler",
+                "static int protFromPerms");
+
+        assertTrue("raw open/access-style SVC telemetry should retain the original path even when IOCore does not rewrite it",
+                telemetry.contains("bool redirectable")
+                        && telemetry.contains("char original[kMaxPath]")
+                        && source.contains("copyTelemetryPath(gLastRedirectTelemetry.original"));
+        assertTrue("failed passthrough raw file probes must log the path, result, and IDA file offset so environment predicates can be correlated without blocking the app",
+                handler.contains("raw syscall file passthrough")
+                        && handler.contains("path=%s")
+                        && handler.contains("result=0x%lx")
+                        && handler.contains("pcFileOff=0x%")
+                        && handler.contains("gLastRedirectTelemetry.original"));
+        assertTrue("read/lseek syscall names should be decoded because protected loaders inspect maps/status byte-by-byte through raw SVC stubs",
+                source.contains("case __NR_read:")
+                        && source.contains("return \"read\"")
+                        && source.contains("case __NR_lseek:")
+                        && source.contains("return \"lseek\""));
+        assertFalse("raw syscall passthrough diagnostics must remain sample agnostic",
+                source.contains("com.bestv")
+                        || source.contains("TelnetCommand")
+                        || source.contains("entryRunApplication")
+                        || source.contains("jiagu"));
+    }
+
+    @Test
     public void rawSyscallRuntimeRefreshAvoidsFileBackedAppTextIntegritySurface() throws Exception {
         String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
         String shouldScanPath = sliceBetweenOrTail(source,

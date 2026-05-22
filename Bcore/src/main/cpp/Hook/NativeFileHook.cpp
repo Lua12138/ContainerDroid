@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/ucontext.h>
 #include <sys/types.h>
 #include <sys/vfs.h>
 #include <time.h>
@@ -149,6 +150,7 @@ Fstat64Fn gOrigFstat64 = nullptr;
 #endif
 __thread char gSanitizedDladdrPath[PATH_MAX];
 char gNativeTerminationShieldPackage[128] = {};
+char gNativeSandboxProcessName[128] = {};
 bool gNativeTerminationBlockingEnabled = false;
 pid_t gNativeTerminationShieldRootPid = 0;
 pid_t gNativeTerminationShieldRootPgid = 0;
@@ -166,6 +168,7 @@ bool gDirectLibcMetadataHooksInstalled = false;
 bool gDirectLibcMetadataHooksInstalling = false;
 bool gDirectLibcPthreadCreateHookInstalled = false;
 bool gDirectLibcPthreadCreateHookInstalling = false;
+bool gNativeCrashProbeInstalled = false;
 int gNativeVirtualUid = -1;
 int gNativeHostUid = -1;
 int gNativeHostGid = -1;
@@ -212,10 +215,12 @@ static const char *kBlackBoxHostPackagePrefix = "top.niunaijun.blackbox";
 static const char *kProcShimProperty = "debug.blackbox.proc_shim";
 static const char *kProcMapsPathSanitizeProperty = "debug.blackbox.maps_path_sanitize";
 static const char *kTransientProcMapsProperty = "debug.blackbox.transient_maps";
+static const char *kRawProcVirtualizationProperty = "debug.blackbox.raw_proc_virtual";
 static const char *kProcessProbeProperty = "debug.blackbox.process_probe";
 static const char *kFileProbeProperty = "debug.blackbox.file_probe";
 static const char *kTerminationProbeProperty = "debug.blackbox.termination_probe";
 static const char *kTerminationMemoryDumpProperty = "debug.blackbox.termination_memdump";
+static const char *kNativeCrashProbeProperty = "debug.blackbox.native_crash_probe";
 static const char *kDlopenProbeProperty = "debug.blackbox.dlopen_probe";
 static const char *kEarlyDlopenRepatchProperty = "debug.blackbox.early_dlopen_repatch";
 static const char *kDlsymProbeProperty = "debug.blackbox.dlsym_probe";
@@ -223,6 +228,7 @@ static const char *kDlsymReplacementProperty = "debug.blackbox.dlsym_replace";
 constexpr int kSignalAbort = SIGABRT;
 constexpr int kSignalKill = SIGKILL;
 constexpr int kSignalTerm = SIGTERM;
+constexpr size_t kLinuxTaskCommMaxBytes = 15;
 constexpr size_t kTerminationProbeMaxFrames = 16;
 constexpr size_t kProcessProbeMaxFrames = 16;
 constexpr size_t kTerminationMemoryDumpMaxBytes = 2 * 1024 * 1024;
@@ -230,6 +236,17 @@ constexpr size_t kTerminationStackDumpMaxBytes = 16 * 1024;
 constexpr size_t kTerminationAdjacentDumpMaxMaps = 4;
 constexpr size_t kTerminationAdjacentDumpMaxBytes = 512 * 1024;
 constexpr uintptr_t kTerminationAdjacentDumpMaxDistance = 4 * 1024 * 1024;
+struct NativeCrashSignalAction {
+    int signo = 0;
+    bool has_previous = false;
+    struct sigaction previous = {};
+};
+NativeCrashSignalAction gNativeCrashSignalActions[] = {
+        {SIGSEGV, false, {}},
+        {SIGBUS, false, {}},
+        {SIGILL, false, {}},
+};
+__thread bool gNativeCrashProbeHandling = false;
 #ifndef MFD_CLOEXEC
 #define MFD_CLOEXEC 0x0001U
 #endif
@@ -605,6 +622,14 @@ bool isTerminationProbeEnabled() {
 
 bool isTerminationMemoryDumpEnabled() {
     return blackbox::native_property::getBool(kTerminationMemoryDumpProperty);
+}
+
+bool isNativeCrashProbeEnabled() {
+    return blackbox::native_property::getBool(kNativeCrashProbeProperty);
+}
+
+bool isRawProcVirtualizationEnabled() {
+    return blackbox::native_property::getBool(kRawProcVirtualizationProperty);
 }
 
 bool isNativeSandboxEnvironmentConfigured() {
@@ -1694,6 +1719,159 @@ void logNativeTerminationProbe(const char *api,
               static_cast<unsigned long>(frame_location.offset),
               frame_location.path);
     }
+}
+
+NativeCrashSignalAction *findNativeCrashSignalAction(int signo) {
+    for (NativeCrashSignalAction &action : gNativeCrashSignalActions) {
+        if (action.signo == signo) {
+            return &action;
+        }
+    }
+    return nullptr;
+}
+
+uintptr_t crashContextPc(void *context_raw) {
+    if (context_raw == nullptr) {
+        return 0;
+    }
+    ucontext_t *context = reinterpret_cast<ucontext_t *>(context_raw);
+#if defined(__arm__)
+    return static_cast<uintptr_t>(context->uc_mcontext.arm_pc);
+#elif defined(__aarch64__)
+    return static_cast<uintptr_t>(context->uc_mcontext.pc);
+#else
+    (void) context;
+    return 0;
+#endif
+}
+
+uintptr_t crashContextLr(void *context_raw) {
+    if (context_raw == nullptr) {
+        return 0;
+    }
+    ucontext_t *context = reinterpret_cast<ucontext_t *>(context_raw);
+#if defined(__arm__)
+    return static_cast<uintptr_t>(context->uc_mcontext.arm_lr);
+#elif defined(__aarch64__)
+    return static_cast<uintptr_t>(context->uc_mcontext.regs[30]);
+#else
+    (void) context;
+    return 0;
+#endif
+}
+
+uintptr_t crashContextSp(void *context_raw) {
+    if (context_raw == nullptr) {
+        return 0;
+    }
+    ucontext_t *context = reinterpret_cast<ucontext_t *>(context_raw);
+#if defined(__arm__)
+    return static_cast<uintptr_t>(context->uc_mcontext.arm_sp);
+#elif defined(__aarch64__)
+    return static_cast<uintptr_t>(context->uc_mcontext.sp);
+#else
+    (void) context;
+    return 0;
+#endif
+}
+
+void resolveCrashAddressLocation(uintptr_t address, CallerLocation *location) {
+    if (location == nullptr) {
+        return;
+    }
+    resolveCallerLocation(reinterpret_cast<void *>(address), location);
+    if (location->resolved) {
+        return;
+    }
+    MemoryMapEntry entry = {};
+    if (!resolveMemoryMapEntry(reinterpret_cast<void *>(address), &entry)) {
+        return;
+    }
+    location->resolved = true;
+    location->offset = entry.offset + (address - entry.start);
+    snprintf(location->path, sizeof(location->path), "%s", entry.path);
+}
+
+void forwardNativeCrashSignal(int signo, siginfo_t *info, void *context_raw) {
+    (void) info;
+    (void) context_raw;
+    NativeCrashSignalAction *action = findNativeCrashSignalAction(signo);
+    if (action != nullptr && action->has_previous) {
+        sigaction(signo, &action->previous, nullptr);
+    } else {
+        signal(signo, SIG_DFL);
+    }
+#ifdef __NR_tgkill
+    callKernelSyscall(__NR_tgkill,
+                      static_cast<long>(getpid()),
+                      static_cast<long>(rawThreadId()),
+                      static_cast<long>(signo));
+#else
+    raise(signo);
+#endif
+    rawExitProcess(128 + signo);
+}
+
+void nativeCrashProbeHandler(int signo, siginfo_t *info, void *context_raw) {
+    if (gNativeCrashProbeHandling) {
+        forwardNativeCrashSignal(signo, info, context_raw);
+        return;
+    }
+    gNativeCrashProbeHandling = true;
+
+    uintptr_t pc = crashContextPc(context_raw);
+    uintptr_t lr = crashContextLr(context_raw);
+    uintptr_t sp = crashContextSp(context_raw);
+    CallerLocation pc_location = {};
+    CallerLocation lr_location = {};
+    resolveCrashAddressLocation(pc, &pc_location);
+    resolveCrashAddressLocation(lr, &lr_location);
+
+    ALOGE("native crash probe signal=%d si_code=%d package=%s tid=%d fault=%p pc=%p lr=%p sp=%p pcOff=0x%lx pcMap=%s lrOff=0x%lx lrMap=%s",
+          signo,
+          info == nullptr ? 0 : info->si_code,
+          gNativeTerminationShieldPackage[0] == '\0' ? "none" : gNativeTerminationShieldPackage,
+          static_cast<int>(rawThreadId()),
+          info == nullptr ? nullptr : info->si_addr,
+          reinterpret_cast<void *>(pc),
+          reinterpret_cast<void *>(lr),
+          reinterpret_cast<void *>(sp),
+          static_cast<unsigned long>(pc_location.offset),
+          pc_location.path,
+          static_cast<unsigned long>(lr_location.offset),
+          lr_location.path);
+
+    gNativeCrashProbeHandling = false;
+    forwardNativeCrashSignal(signo, info, context_raw);
+}
+
+void installNativeCrashProbeSignal(int signo, struct sigaction *previous) {
+    if (previous == nullptr) {
+        return;
+    }
+    struct sigaction action = {};
+    action.sa_sigaction = nativeCrashProbeHandler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    if (sigaction(signo, &action, previous) != 0) {
+        ALOGD("native crash probe signal install failed signal=%d errno=%d", signo, errno);
+        return;
+    }
+    NativeCrashSignalAction *stored = findNativeCrashSignalAction(signo);
+    if (stored != nullptr) {
+        stored->has_previous = true;
+    }
+}
+
+void installNativeCrashProbe() {
+    if (gNativeCrashProbeInstalled) {
+        return;
+    }
+    installNativeCrashProbeSignal(SIGSEGV, &gNativeCrashSignalActions[0].previous);
+    installNativeCrashProbeSignal(SIGBUS, &gNativeCrashSignalActions[1].previous);
+    installNativeCrashProbeSignal(SIGILL, &gNativeCrashSignalActions[2].previous);
+    gNativeCrashProbeInstalled = true;
+    ALOGD("native crash probe installed");
 }
 
 void logPthreadCreateProbe(const char *api, void *start_routine, int result, void *caller) {
@@ -3032,6 +3210,20 @@ void replaceFirstNumericToken(std::string *value, const char *prefix, int replac
     value->replace(number_start, number_end - number_start, replacement_buffer);
 }
 
+bool shouldHideEarlyMapsLine(const char *line) {
+    return containsPathPart(line, kBlackBoxHostPackagePrefix)
+           || containsPathPart(line, "libblackbox.so")
+           || containsPathPart(line, "libblackhook.so")
+           || containsPathPart(line, "libblackdex.so")
+           || containsPathPart(line, "libpine.so")
+           || containsPathPart(line, "[anon:pine codes]");
+}
+
+bool shouldHideEarlyRawMapsLine(const char *line) {
+    return !containsPathPart(line, "/blackbox/data/user/")
+           && shouldHideEarlyMapsLine(line);
+}
+
 bool isWritableExecutableProcMapsLine(const char *line) {
     if (line == nullptr) {
         return false;
@@ -3048,26 +3240,29 @@ bool isWritableExecutableProcMapsLine(const char *line) {
            && perms[2] == 'x';
 }
 
-bool shouldHideEarlyMapsLine(const char *line) {
-    return containsPathPart(line, kBlackBoxHostPackagePrefix)
-           || containsPathPart(line, "libblackbox.so")
-           || containsPathPart(line, "libblackhook.so")
-           || containsPathPart(line, "libblackdex.so")
-           || containsPathPart(line, "libpine.so")
-           || containsPathPart(line, "[anon:pine codes]")
-           || isWritableExecutableProcMapsLine(line);
-}
-
-bool shouldHideEarlyRawMapsLine(const char *line) {
-    return !containsPathPart(line, "/blackbox/data/user/")
-           && shouldHideEarlyMapsLine(line);
-}
-
 const char *currentVirtualPackageForProcMaps() {
     if (gEarlyProcMapsPackage[0] != '\0') {
         return gEarlyProcMapsPackage;
     }
     return gNativeTerminationShieldPackage;
+}
+
+const char *currentVirtualProcessNameForProcStatus() {
+    if (gNativeSandboxProcessName[0] != '\0') {
+        return gNativeSandboxProcessName;
+    }
+    return currentVirtualPackageForProcMaps();
+}
+
+std::string linuxTaskCommForProcessName(const char *process_name) {
+    const char *name = process_name == nullptr || process_name[0] == '\0'
+                       ? currentVirtualPackageForProcMaps()
+                       : process_name;
+    size_t length = strlen(name);
+    if (length <= kLinuxTaskCommMaxBytes) {
+        return std::string(name);
+    }
+    return std::string(name + length - kLinuxTaskCommMaxBytes);
 }
 
 bool isFrameworkOrHookNativeCallerPath(const char *path) {
@@ -3170,6 +3365,19 @@ bool isAppOwnedNativeLibraryPath(const char *path) {
            || containsPathPart(path, "/data/app/");
 }
 
+bool isAppPrivateNativeLibraryPath(const char *path) {
+    const char *package_name = currentVirtualPackageForProcMaps();
+    if (package_name[0] == '\0'
+        || path == nullptr
+        || !containsPathPart(path, package_name)
+        || !endsWithPathPart(path, ".so")) {
+        return false;
+    }
+    return containsPathPart(path, "/blackbox/data/user/")
+           || containsPathPart(path, "/data/user/")
+           || containsPathPart(path, "/data/data/");
+}
+
 void markAppNativeLoaderMapsWindow(const char *path) {
     uint64_t now = monotonicTimeNs();
     if (now == 0) {
@@ -3188,9 +3396,9 @@ void maybeMarkAppNativeLoaderMapsWindow(const char *pathname, const char *redire
     if (result < 0) {
         return;
     }
-    if (isAppOwnedNativeLibraryPath(pathname)) {
+    if (isAppPrivateNativeLibraryPath(pathname)) {
         markAppNativeLoaderMapsWindow(pathname);
-    } else if (isAppOwnedNativeLibraryPath(redirected)) {
+    } else if (isAppPrivateNativeLibraryPath(redirected)) {
         markAppNativeLoaderMapsWindow(redirected);
     }
 }
@@ -3371,6 +3579,11 @@ std::string rewriteProcStatusIdentityLine(const char *line) {
         return std::string(line == nullptr ? "" : line);
     }
     char buffer[256];
+    if (strncmp(line, "Name:", 5) == 0) {
+        std::string task_comm = linuxTaskCommForProcessName(currentVirtualProcessNameForProcStatus());
+        snprintf(buffer, sizeof(buffer), "Name:\t%s\n", task_comm.c_str());
+        return buffer;
+    }
     if (strncmp(line, "Uid:", 4) == 0) {
         snprintf(buffer, sizeof(buffer), "Uid:\t%d\t%d\t%d\t%d\n",
                  gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid);
@@ -3512,6 +3725,7 @@ bool writeVirtualProcStatusFile(int fd) {
         if (!isNativeVirtualUidConfigured()) {
             return false;
         }
+        std::string task_comm = linuxTaskCommForProcessName(currentVirtualProcessNameForProcStatus());
         char fallback[512];
         int written = snprintf(fallback, sizeof(fallback),
                                "Name:\t%s\n"
@@ -3525,7 +3739,7 @@ bool writeVirtualProcStatusFile(int fd) {
                                "Groups:\t%s \n"
                                "NoNewPrivs:\t0\n"
                                "Seccomp:\t2\n",
-                               currentVirtualPackageForProcMaps(),
+                               task_comm.c_str(),
                                getpid(), getpid(), getppid(),
                                gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid,
                                gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid,
@@ -3558,7 +3772,14 @@ bool writeProcMapsPathOnlyFile(int fd) {
     bool wrote_any = false;
     bool ok = true;
     while (fgets(line, sizeof(line), maps) != nullptr) {
+        if (shouldHideEarlyRawMapsLine(line)) {
+            continue;
+        }
         std::string sanitized = sanitizeProcMapsPathOnlyLine(line);
+        if (isWritableExecutableProcMapsLine(sanitized.c_str())
+            || shouldHideEarlyMapsLine(sanitized.c_str())) {
+            continue;
+        }
         if (!writeExact(fd, sanitized.data(), sanitized.size())) {
             ok = false;
             break;
@@ -3845,9 +4066,10 @@ extern "C" void setNativeFileVirtualUid(int virtual_uid) {
     gNativeVirtualUid = virtual_uid;
 }
 
-extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
+void setNativeSandboxEnvironmentInternal(const char *package_name, const char *process_name) {
     if (package_name == nullptr || package_name[0] == '\0') {
         resetEarlyProcMapsShim();
+        gNativeSandboxProcessName[0] = '\0';
         gAppNativeLoaderMapsTrustUntilNs = 0;
         gNativeTerminationShieldPackage[0] = '\0';
         gNativeTerminationBlockingEnabled = false;
@@ -3858,11 +4080,20 @@ extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
     }
     gAppNativeLoaderMapsTrustUntilNs = 0;
     snprintf(gNativeTerminationShieldPackage, sizeof(gNativeTerminationShieldPackage), "%s", package_name);
+    snprintf(gNativeSandboxProcessName,
+             sizeof(gNativeSandboxProcessName),
+             "%s",
+             process_name == nullptr || process_name[0] == '\0' ? package_name : process_name);
     gNativeTerminationBlockingEnabled = false;
     installDirectLibcProcMapsHooks();
     installDirectLibcMetadataHooks();
     installDirectLibcPthreadCreateHook();
-    blackbox::rawsyscall::installRawSyscallEnvironmentProbe();
+    if (isNativeCrashProbeEnabled()) {
+        installNativeCrashProbe();
+    }
+    if (isTerminationProbeEnabled()) {
+        installDirectLibcTerminationHooks();
+    }
     if (isProcShimEnabled()) {
         prepareEarlyProcMapsShim(package_name);
     } else {
@@ -3872,12 +4103,23 @@ extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
     gNativeTerminationShieldRootPgid = getpgrp();
 }
 
+extern "C" void setNativeSandboxEnvironment(const char *package_name, const char *process_name) {
+    setNativeSandboxEnvironmentInternal(package_name, process_name);
+}
+
+extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
+    setNativeSandboxEnvironmentInternal(package_name, package_name);
+}
+
 extern "C" void setNativeTerminationShieldPackage(const char *package_name) {
     if (package_name == nullptr || package_name[0] == '\0') {
-        setNativeSandboxEnvironmentPackage(package_name);
+        setNativeSandboxEnvironmentInternal(package_name, nullptr);
         return;
     }
-    setNativeSandboxEnvironmentPackage(package_name);
+    const char *process_name = gNativeSandboxProcessName[0] == '\0'
+                               ? package_name
+                               : gNativeSandboxProcessName;
+    setNativeSandboxEnvironmentInternal(package_name, process_name);
     gNativeTerminationBlockingEnabled = true;
     installDirectLibcTerminationHooks();
     blackbox::rawsyscall::installRawSyscallTerminationProbe();
@@ -3899,6 +4141,29 @@ extern "C" void disableEarlyProcMapsShim() {
     }
 }
 
+extern "C" int blackbox_open_virtual_proc_fd_for_raw_syscall(int dirfd,
+                                                             const char *pathname,
+                                                             int flags,
+                                                             void *caller) {
+    if (!isRawProcVirtualizationEnabled()) {
+        return -1;
+    }
+    if (!isReadOnlyOpenFlags(flags)) {
+        return -1;
+    }
+
+    ResolvedPath resolved = resolveOpenAtPathForLog(dirfd, pathname);
+    int transient_maps = openTransientProcMapsFdForRead(resolved.path, caller);
+    if (transient_maps >= 0) {
+        return transient_maps;
+    }
+    int shim_result = openProcShimFdForRead(resolved.path);
+    if (shim_result >= 0) {
+        return shim_result;
+    }
+    return openVirtualProcIdentityFdForRead(resolved.path);
+}
+
 extern "C" void enterNativeInternalFileProbe() {
     gInternalFileProbeDepth++;
 }
@@ -3913,12 +4178,13 @@ extern "C" bool writeSanitizedProcMapsSnapshot(const char *output_path, const ch
     if (output_path == nullptr || output_path[0] == '\0') {
         return false;
     }
+    (void) package_name;
     ScopedInternalFileProbe internal_probe;
     int fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (fd < 0) {
         return false;
     }
-    bool ok = writeEarlyProcMapsFileForPackage(fd, package_name);
+    bool ok = writeProcMapsPathOnlyFile(fd);
     if (close(fd) != 0) {
         ok = false;
     }

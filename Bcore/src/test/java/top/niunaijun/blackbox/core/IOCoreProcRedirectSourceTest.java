@@ -47,7 +47,7 @@ public class IOCoreProcRedirectSourceTest {
     }
 
     @Test
-    public void procMapsRedirectsToSanitizedAppVisibleSnapshot() throws Exception {
+    public void procMapsRedirectsToSanitizedPublicSnapshot() throws Exception {
         String source = readSource(
                 "src/main/java/top/niunaijun/blackbox/core/IOCore.java",
                 "Bcore/src/main/java/top/niunaijun/blackbox/core/IOCore.java");
@@ -62,7 +62,7 @@ public class IOCoreProcRedirectSourceTest {
                 source.contains("ensureProcMapsFile")
                         && source.contains("BEnvironment.getProcDir(appPid)")
                         && source.contains("new File(procDir, \"maps\")"));
-        assertTrue("Java /proc/self/maps refresh should prefer the native snapshot writer; Java line-by-line fallback was too slow once early direct libc maps hooks are active",
+        assertTrue("Java /proc/self/maps refresh should prefer the native public snapshot writer; Java line-by-line fallback was too slow once early direct libc maps hooks are active",
                 source.contains("writeSanitizedProcMapsFileNative(maps, BActivityThread.getAppPackageName())")
                         && source.contains("NativeCore.writeSanitizedProcMapsSnapshot"));
         assertTrue("refreshing the virtual maps file must not recursively redirect its own /proc/self/maps read",

@@ -32,6 +32,7 @@
 void *fake_dlopen(const char *libpath, int flags);
 void *fake_dlsym(void *handle, const char *name);
 
+extern "C" void setNativeSandboxEnvironment(const char *package_name, const char *process_name);
 extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name);
 extern "C" void setNativeTerminationShieldPackage(const char *package_name);
 extern "C" void disableEarlyProcMapsShim();
@@ -193,6 +194,18 @@ void setVirtualUid(JNIEnv *env, jclass clazz, jint virtualUid) {
 void configureNativeSandboxEnvironment(JNIEnv *env, jclass clazz, jstring packageName) {
     const char *package_name = packageName == nullptr ? nullptr : env->GetStringUTFChars(packageName, JNI_FALSE);
     setNativeSandboxEnvironmentPackage(package_name);
+    if (package_name != nullptr) {
+        env->ReleaseStringUTFChars(packageName, package_name);
+    }
+}
+
+void configureNativeSandboxEnvironmentWithProcess(JNIEnv *env, jclass clazz, jstring packageName, jstring processName) {
+    const char *package_name = packageName == nullptr ? nullptr : env->GetStringUTFChars(packageName, JNI_FALSE);
+    const char *process_name = processName == nullptr ? nullptr : env->GetStringUTFChars(processName, JNI_FALSE);
+    setNativeSandboxEnvironment(package_name, process_name);
+    if (process_name != nullptr) {
+        env->ReleaseStringUTFChars(processName, process_name);
+    }
     if (package_name != nullptr) {
         env->ReleaseStringUTFChars(packageName, package_name);
     }
@@ -616,6 +629,7 @@ static JNINativeMethod gMethods[] = {
         {"installRawSyscallEnvironmentProbe", "()V",                       (void *) installRawSyscallEnvironmentProbe},
         {"installRawSyscallTerminationProbe", "()V",                       (void *) installRawSyscallTerminationProbe},
         {"setVirtualUid",       "(I)V",                                    (void *) setVirtualUid},
+        {"setNativeSandboxEnvironment", "(Ljava/lang/String;Ljava/lang/String;)V", (void *) configureNativeSandboxEnvironmentWithProcess},
         {"setNativeSandboxEnvironmentPackage", "(Ljava/lang/String;)V",    (void *) configureNativeSandboxEnvironment},
         {"setNativeTerminationShieldPackage", "(Ljava/lang/String;)V",     (void *) configureNativeTerminationShield},
         {"disableEarlyProcMapsShim", "()V",                                (void *) disableNativeEarlyProcMapsShim},

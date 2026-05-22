@@ -187,7 +187,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class GetPackageUid extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            String virtualPackage = MethodParameterUtils.replaceFirstAppPkg(args);
+            if (virtualPackage != null) {
+                return BActivityThread.getBUid();
+            }
             return method.invoke(who, args);
         }
     }

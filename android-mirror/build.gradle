@@ -3,7 +3,8 @@ plugins {
 }
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace 'top.niunaijun.android_mirror'
+    compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
 
     aidlPackageWhiteList "android/app/IServiceConnection.aidl"
@@ -19,6 +20,9 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+    buildFeatures {
+        aidl true
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

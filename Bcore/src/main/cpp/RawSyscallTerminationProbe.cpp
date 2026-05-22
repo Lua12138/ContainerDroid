@@ -15,6 +15,11 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
+extern "C" int blackbox_open_virtual_proc_fd_for_raw_syscall(int dirfd,
+                                                             const char *pathname,
+                                                             int flags,
+                                                             void *caller);
+
 namespace blackbox {
 namespace rawsyscall {
 namespace {
@@ -51,6 +56,9 @@ static PatchEntry gPatches[kMaxPatches];
 static struct sigaction gPreviousTrapAction = {};
 static bool gHasPreviousTrapAction = false;
 static pid_t gRootPid = -1;
+static constexpr size_t kTrapAltStackSize = 64 * 1024;
+static __thread bool gThreadTrapAltStackInstalled = false;
+static __thread void *gThreadTrapAltStack = nullptr;
 #if defined(__arm__)
 static __thread RawSyscallRedirectTelemetry gLastRedirectTelemetry;
 #endif
@@ -155,6 +163,14 @@ static const char *syscallName(int sysno) {
         case __NR_openat:
             return "openat";
 #endif
+#ifdef __NR_read
+        case __NR_read:
+            return "read";
+#endif
+#ifdef __NR_lseek
+        case __NR_lseek:
+            return "lseek";
+#endif
 #ifdef __NR_access
         case __NR_access:
             return "access";
@@ -209,6 +225,48 @@ static void releaseRedirectedRawPath(const char *pathname, const char *redirecte
     }
 }
 
+static int openVirtualProcFdForRawSyscall(int sysno, long args[6], uintptr_t caller) {
+    const char *pathname = nullptr;
+    int flags = 0;
+    int dirfd = AT_FDCWD;
+    switch (sysno) {
+#ifdef __NR_open
+        case __NR_open:
+            pathname = reinterpret_cast<const char *>(args[0]);
+            flags = static_cast<int>(args[1]);
+            break;
+#endif
+#ifdef __NR_openat
+        case __NR_openat:
+            dirfd = static_cast<int>(args[0]);
+            pathname = reinterpret_cast<const char *>(args[1]);
+            flags = static_cast<int>(args[2]);
+            break;
+#endif
+        default:
+            return -1;
+    }
+
+    int fd = blackbox_open_virtual_proc_fd_for_raw_syscall(
+            dirfd,
+            pathname,
+            flags,
+            reinterpret_cast<void *>(caller));
+    if (fd < 0) {
+        return -1;
+    }
+
+    gLastRedirectTelemetry.redirectable = true;
+    gLastRedirectTelemetry.redirected = true;
+    copyTelemetryPath(gLastRedirectTelemetry.original,
+                      sizeof(gLastRedirectTelemetry.original),
+                      pathname);
+    copyTelemetryPath(gLastRedirectTelemetry.redirected_path,
+                      sizeof(gLastRedirectTelemetry.redirected_path),
+                      "virtual-proc-fd");
+    return fd;
+}
+
 static long rawKernelSyscall6(long sysno, long arg0, long arg1, long arg2,
                               long arg3, long arg4, long arg5) {
     register long r0 __asm__("r0") = arg0;
@@ -246,6 +304,11 @@ static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc) {
             static_cast<long>(mc.arm_r4),
             static_cast<long>(mc.arm_r5),
     };
+
+    int virtual_proc_fd = openVirtualProcFdForRawSyscall(sysno, args, static_cast<uintptr_t>(mc.arm_pc));
+    if (virtual_proc_fd >= 0) {
+        return virtual_proc_fd;
+    }
 
     int path_index = -1;
     switch (sysno) {
@@ -459,6 +522,23 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                                     entry->address,
                                     gLastRedirectTelemetry.original,
                                     gLastRedirectTelemetry.redirected_path,
+                                    static_cast<unsigned long>(result),
+                                    entry->non_termination_count,
+                                    entry->map_start,
+                                    entry->map_end,
+                                    entry->map_offset,
+                                    patchedInstructionFileOffset(*entry),
+                                    entry->path);
+            } else if (gLastRedirectTelemetry.redirectable) {
+                __android_log_print(ANDROID_LOG_DEBUG, kTag,
+                                    "raw syscall file passthrough sys=%s(%d) pc=0x%" PRIxPTR
+                                    " path=%s result=0x%lx count=%u map=0x%" PRIxPTR
+                                    "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR
+                                    " pcFileOff=0x%" PRIxPTR " pathMap=%s",
+                                    syscallName(sysno),
+                                    sysno,
+                                    entry->address,
+                                    gLastRedirectTelemetry.original,
                                     static_cast<unsigned long>(result),
                                     entry->non_termination_count,
                                     entry->map_start,
@@ -716,8 +796,41 @@ static bool installTrapHandler() {
     return true;
 }
 
+static bool ensureCurrentThreadTrapAlternateStack() {
+    if (gThreadTrapAltStackInstalled) {
+        return true;
+    }
+    void *stack_memory = mmap(nullptr,
+                              kTrapAltStackSize,
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS,
+                              -1,
+                              0);
+    if (stack_memory == MAP_FAILED) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "sigaltstack mmap failed: errno=%d (%s)", errno, strerror(errno));
+        return false;
+    }
+    stack_t stack = {};
+    stack.ss_sp = stack_memory;
+    stack.ss_size = kTrapAltStackSize;
+    stack.ss_flags = 0;
+    if (sigaltstack(&stack, nullptr) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "sigaltstack install failed: errno=%d (%s)", errno, strerror(errno));
+        munmap(stack_memory, kTrapAltStackSize);
+        return false;
+    }
+    gThreadTrapAltStack = stack_memory;
+    gThreadTrapAltStackInstalled = true;
+    return true;
+}
+
 static bool ensureRawSyscallProbeInstalled() {
 #if defined(__arm__)
+    if (!ensureCurrentThreadTrapAlternateStack()) {
+        return false;
+    }
     bool expected = false;
     if (gInstalled.compare_exchange_strong(expected, true)) {
         gRootPid = getpid();
@@ -775,6 +888,9 @@ void installRawSyscallTerminationProbe() {
 void refreshRawSyscallProbeMaps() {
 #if defined(__arm__)
     if (!ensureRawSyscallProbeInstalled()) {
+        return;
+    }
+    if (!ensureCurrentThreadTrapAlternateStack()) {
         return;
     }
     int before = static_cast<int>(gPatchCount);
