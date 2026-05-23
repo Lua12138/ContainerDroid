@@ -108,14 +108,24 @@ public class RuntimeFeatureSwitchSourceTest {
         String pineBuildGradle = readSource("Bcore/pine-core/build.gradle");
         String pineCmake = readSource("Bcore/pine-core/src/main/cpp/CMakeLists.txt");
         String pineLog = readSource("Bcore/pine-core/src/main/cpp/utils/log.h");
+        String bcoreBuildGradle = readSource("Bcore/build.gradle");
+        String bcoreCmake = readSource("Bcore/src/main/cpp/CMakeLists.txt");
+        String bcoreLog = readSource("Bcore/src/main/cpp/Log.h");
+        String rawSyscallProbe = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
 
         assertTrue("The app build should enable R8 when diagnostic logcat is compiled out",
                 appBuildGradle.contains("blackboxDiagnosticLogcatMinifyEnabled")
                         && appBuildGradle.contains("blackboxDiagnosticLogcatMinifyRequested")
                         && appBuildGradle.contains("!blackboxDiagnosticLogcatEnabledValue ||")
                         && appBuildGradle.contains("proguard-diagnostic-logcat-disabled.pro"));
+        assertTrue("The no-log diagnostic build should be production-like by default and avoid ART/JDWP debug slow paths",
+                appBuildGradle.contains("blackboxDebuggableEnabledValue")
+                        && appBuildGradle.contains("blackBoxBooleanOption('blackboxDebuggableEnabled', blackboxDiagnosticLogcatEnabledValue)")
+                        && appBuildGradle.contains("debuggable blackboxDebuggableEnabledValue")
+                        && appBuildGradle.contains("jniDebuggable blackboxDebuggableEnabledValue"));
         assertTrue("The diagnostic-logcat-disabled R8 rules should remove Java Log calls without obfuscating names",
                 disabledProguard.contains("-assumenosideeffects class android.util.Log")
+                        && disabledProguard.contains("-assumenosideeffects class top.niunaijun.blackbox.utils.Slog")
                         && disabledProguard.contains("-keep,allowoptimization class ** { *; }")
                         && disabledProguard.contains("-dontobfuscate"));
         assertTrue("Pine native build should receive the same compile-time diagnostic logcat switch",
@@ -129,6 +139,19 @@ public class RuntimeFeatureSwitchSourceTest {
                 pineLog.contains("#if PINE_LOGCAT_ENABLED")
                         && pineLog.contains("#define LOGD(...) ((void) 0)")
                         && pineLog.contains("#define LOGF(...) ((void) 0)"));
+        assertTrue("Bcore native build should receive the same compile-time diagnostic logcat switch",
+                bcoreBuildGradle.contains("blackboxDiagnosticLogcatEnabledValue")
+                        && bcoreBuildGradle.contains("-DBLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED="));
+        assertTrue("Bcore CMake should convert the Gradle switch into a native compile definition",
+                bcoreCmake.contains("BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
+                        && bcoreCmake.contains("target_compile_definitions(blackbox PRIVATE BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED="));
+        assertTrue("Bcore native debug log macros should compile log calls out when diagnostic logcat is disabled",
+                bcoreLog.contains("#if BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
+                        && bcoreLog.contains("#define log_print_debug(...) ((void) 0)"));
+        assertTrue("raw SVC probe debug telemetry is hot-path diagnostic output and should use the compile-time logcat gate",
+                rawSyscallProbe.contains("#if BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
+                        && rawSyscallProbe.contains("#define RAW_SYSCALL_LOGD")
+                        && rawSyscallProbe.contains("RAW_SYSCALL_LOGD("));
     }
 
 }

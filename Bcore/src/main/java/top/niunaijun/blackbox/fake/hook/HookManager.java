@@ -54,6 +54,7 @@ import top.niunaijun.blackbox.fake.service.ApplicationAttachSeccompProxy;
 import top.niunaijun.blackbox.fake.service.ClassLoaderDiagnosticsProxy;
 import top.niunaijun.blackbox.fake.service.ContextDataDirProxy;
 import top.niunaijun.blackbox.fake.service.FileMetadataProxy;
+import top.niunaijun.blackbox.fake.service.FrameworkWtfProxy;
 import top.niunaijun.blackbox.fake.service.RuntimeExecProxy;
 import top.niunaijun.blackbox.fake.service.RuntimeExitProxy;
 import top.niunaijun.blackbox.fake.service.ServiceManagerProxy;
@@ -90,6 +91,7 @@ public class HookManager {
             addInjector(new ActivityThreadIdentityProxy());
             addInjector(new ContextDataDirProxy());
             addInjector(new FileMetadataProxy());
+            addInjector(new FrameworkWtfProxy());
             addInjector(new ClassLoaderDiagnosticsProxy());
             addInjector(new RuntimeExitProxy());
             addInjector(new RuntimeExecProxy());

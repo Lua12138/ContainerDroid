@@ -48,7 +48,7 @@ public final class BinderMonitorConfig {
                         Set<String> watchMethods, Set<Integer> watchCodes,
                         Set<Integer> watchFlags, Set<Integer> watchThreads,
                         int maxRingEvents, String output, boolean logcat) {
-        this.enabled = enabled;
+        this.enabled = sanitizeEnabled(enabled);
         this.packages = immutableCopy(packages);
         this.recordStack = recordStack;
         this.recordProxy = recordProxy;
@@ -270,6 +270,10 @@ public final class BinderMonitorConfig {
     }
 
     private static boolean sanitizeLogcat(boolean requested) {
+        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && requested;
+    }
+
+    private static boolean sanitizeEnabled(boolean requested) {
         return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && requested;
     }
 

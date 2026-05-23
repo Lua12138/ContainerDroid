@@ -15,6 +15,12 @@
     public static boolean isLoggable(...);
 }
 
+-assumenosideeffects class top.niunaijun.blackbox.utils.Slog {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
+
 -assumenosideeffects class top.canyie.pine.Pine {
     public static void log(...);
 }

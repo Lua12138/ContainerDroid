@@ -24,6 +24,8 @@ def blackboxDiagnosticLogcatMinifyRequested =
         blackBoxBooleanOption('blackboxDiagnosticLogcatMinifyEnabled', false)
 def blackboxDiagnosticLogcatMinifyEnabled =
         !blackboxDiagnosticLogcatEnabledValue || blackboxDiagnosticLogcatMinifyRequested
+def blackboxDebuggableEnabledValue =
+        blackBoxBooleanOption('blackboxDebuggableEnabled', blackboxDiagnosticLogcatEnabledValue)
 
 android {
     namespace 'top.niunaijun.blackboxa'
@@ -88,8 +90,8 @@ android {
 
     buildTypes {
         debug {
-            debuggable true
-            jniDebuggable true
+            debuggable blackboxDebuggableEnabledValue
+            jniDebuggable blackboxDebuggableEnabledValue
             minifyEnabled blackboxDiagnosticLogcatMinifyEnabled
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (!blackboxDiagnosticLogcatEnabledValue) {

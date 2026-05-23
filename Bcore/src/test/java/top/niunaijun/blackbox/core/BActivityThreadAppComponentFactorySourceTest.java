@@ -166,6 +166,34 @@ public class BActivityThreadAppComponentFactorySourceTest {
     }
 
     @Test
+    public void lifecycleIdentityDiagnosticsAreExplicitOptInBeforeTouchingClassLoader() throws Exception {
+        String source = readSource(B_ACTIVITY_THREAD_SOURCE);
+
+        int diagnosticSwitch = source.indexOf("private static boolean isAppLifecycleDiagnosticsEnabled()");
+        int contextGuard = source.indexOf("if (!isAppLifecycleDiagnosticsEnabled())", source.indexOf("logContextIdentity("));
+        int contextClassLoader = source.indexOf("context.getClassLoader()", source.indexOf("logContextIdentity("));
+        int boundaryGuard = source.indexOf("if (!isAppLifecycleDiagnosticsEnabled())", source.indexOf("logApplicationBoundary("));
+        int boundaryClassLoader = source.indexOf("getContextClassLoaderQuietly(context)", source.indexOf("logApplicationBoundary("));
+        int identityGuard = source.indexOf("if (!isAppLifecycleDiagnosticsEnabled())", source.indexOf("logApplicationIdentity("));
+        int initialStateGuard = source.indexOf("if (!isAppLifecycleDiagnosticsEnabled())", source.indexOf("logInitialApplicationState("));
+
+        assertTrue("BActivityThread should expose an explicit opt-in switch for lifecycle identity diagnostics",
+                diagnosticSwitch >= 0
+                        && source.contains("BLACKBOX_APP_LIFECYCLE_DIAG")
+                        && source.contains("blackbox.app_lifecycle_diag")
+                        && source.contains("debug.blackbox.app_lifecycle_diag")
+                        && source.contains("BlackBoxCore.get().isDiagnosticLogcatEnabled()"));
+        assertTrue("context identity diagnostics should return before Context.getClassLoader() unless opt-in",
+                contextGuard >= 0 && contextGuard < contextClassLoader);
+        assertTrue("application boundary diagnostics should return before class loader stringification unless opt-in",
+                boundaryGuard >= 0 && boundaryGuard < boundaryClassLoader);
+        assertTrue("uid identity diagnostics should be gated with the same opt-in switch",
+                identityGuard >= 0);
+        assertTrue("initial application diagnostics should be gated with the same opt-in switch",
+                initialStateGuard >= 0);
+    }
+
+    @Test
     public void bindAndLaunchUseTargetCompatibilityInfoForLegacyDisplayScaling() throws Exception {
         String activityThreadSource = readSource(B_ACTIVITY_THREAD_SOURCE);
         String hCallbackSource = readSource(

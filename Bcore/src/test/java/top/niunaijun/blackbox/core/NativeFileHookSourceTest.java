@@ -177,6 +177,29 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void directOpenHooksAvoidCallerMapResolutionForNonVirtualProcReads() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String directOpen = sliceBetween(source,
+                "extern \"C\" int blackbox_direct_open(",
+                "extern \"C\" int blackbox_direct_open_2(");
+        String directOpenAt = sliceBetween(source,
+                "extern \"C\" int blackbox_direct_openat(",
+                "extern \"C\" int blackbox_direct_openat_2(");
+
+        assertTrue("direct libc open hooks should cheaply reject ordinary read-only files before resolving caller maps/backtraces",
+                source.contains("shouldCheckDirectVirtualProcRead")
+                        && directOpen.contains("shouldCheckDirectVirtualProcRead(pathname)")
+                        && directOpenAt.contains("shouldCheckDirectVirtualProcRead(resolved_log.path)"));
+        assertTrue("the cheap path predicate must guard the expensive caller ownership check",
+                directOpen.indexOf("shouldCheckDirectVirtualProcRead(pathname)")
+                        < directOpen.indexOf("shouldVirtualizeDirectProcMapsOpen")
+                        && directOpenAt.indexOf("shouldCheckDirectVirtualProcRead(resolved_log.path)")
+                        < directOpenAt.indexOf("shouldVirtualizeDirectProcMapsOpen"));
+    }
+
+    @Test
     public void fortifiedOpenWrappersDoNotCallTheirOwnFortifyEntryPoints() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -1560,11 +1583,13 @@ public class NativeFileHookSourceTest {
                         && source.contains("void *frames[kProcessProbeMaxFrames]")
                         && source.contains("captureNativeBacktrace(frames, kProcessProbeMaxFrames)")
                         && source.contains("isAppOwnedNativeCallerPath(frame_location.path)"));
-        assertTrue("direct.open should fall back to the raw kernel open for /proc/self/maps when the caller is not app-owned native code",
-                directOpen.contains("bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));")
+        assertTrue("direct.open should fall back to the raw kernel open unless the path is a virtual proc candidate and the caller is app-owned native code",
+                directOpen.contains("bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(pathname)\n"
+                        + "                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));")
                         && directOpen.contains("if (virtualize_proc_maps) {\n            int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));"));
-        assertTrue("direct.openat should use the same app-native caller policy before creating sanitized maps fds",
-                directOpenAt.contains("bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));")
+        assertTrue("direct.openat should use the same virtual-proc path guard and app-native caller policy before creating sanitized maps fds",
+                directOpenAt.contains("bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(resolved_log.path)\n"
+                        + "                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));")
                         && directOpenAt.contains("if (virtualize_proc_maps) {\n            int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));"));
     }
 
@@ -1704,7 +1729,7 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
-    public void appOwnedPthreadTrampolineRefreshesRawSvcCoverageBeforeAntiDebugStartRoutineRuns() throws Exception {
+    public void appOwnedPthreadTrampolineRefreshesRawSvcCoverageByDefaultWithExplicitOptOut() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
@@ -1715,8 +1740,11 @@ public class NativeFileHookSourceTest {
                 "extern \"C\" int pthread_create(",
                 "extern \"C\" int kill(");
 
-        assertTrue("libffi-created anti-debug threads can run hand-written SVC stubs from unpacked app-owned code; the pthread layer should refresh the generic raw syscall probe instead of relying on dlsym/PLT replacement",
+        assertTrue("libffi-created app-owned threads can run hand-written SVC stubs from unpacked code; raw SVC refresh should remain enabled by default, with an explicit opt-out for diagnosis",
                 source.contains("#include \"../RawSyscallTerminationProbe.h\"")
+                        && source.contains("debug.blackbox.raw_syscall_thread_refresh")
+                        && source.contains("isRawSyscallThreadRefreshEnabled")
+                        && source.contains("getBoolDefaultTrue(kRawSyscallThreadRefreshProperty)")
                         && source.contains("blackbox::rawsyscall::refreshRawSyscallProbeMaps();"));
         assertFalse("the parent pthread_create path must not patch executable app library text before JNI_OnLoad/integrity checks complete",
                 pthreadWrapper.contains("blackbox::rawsyscall::refreshRawSyscallProbeMaps();"));
@@ -1724,10 +1752,13 @@ public class NativeFileHookSourceTest {
                 pthreadWrapper.contains("start_routine = appOwnedPthreadStartTrampoline;")
                         && pthreadWrapper.indexOf("start_routine = appOwnedPthreadStartTrampoline;")
                         < pthreadWrapper.indexOf("int result = fn(thread, attr, start_routine, arg);"));
-        assertTrue("the trampoline should refresh after marking the child thread and before the protected start routine executes",
+        assertTrue("the trampoline should keep the app-owned marker, guard the raw SVC refresh by the default-on opt-out, and run it before the protected start routine executes",
                 trampoline.contains("rememberAppOwnedNativeThread(pthread_self());")
+                        && trampoline.contains("if (isRawSyscallThreadRefreshEnabled())")
                         && trampoline.contains("blackbox::rawsyscall::refreshRawSyscallProbeMaps();")
                         && trampoline.indexOf("rememberAppOwnedNativeThread(pthread_self());")
+                        < trampoline.indexOf("if (isRawSyscallThreadRefreshEnabled())")
+                        && trampoline.indexOf("if (isRawSyscallThreadRefreshEnabled())")
                         < trampoline.indexOf("blackbox::rawsyscall::refreshRawSyscallProbeMaps();")
                         && trampoline.indexOf("blackbox::rawsyscall::refreshRawSyscallProbeMaps();")
                         < trampoline.indexOf("return start_routine(arg);"));

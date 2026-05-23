@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/ucontext.h>
@@ -27,6 +28,17 @@ namespace {
 static const char *kTag = "BlackBoxRawSyscall";
 static constexpr size_t kMaxPatches = 8192;
 static constexpr size_t kMaxPath = 192;
+static constexpr uint32_t kHotPassthroughRestoreThreshold = 64 * 1024;
+
+#ifndef BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+#define BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED 1
+#endif
+
+#if BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+#define RAW_SYSCALL_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, kTag, __VA_ARGS__)
+#else
+#define RAW_SYSCALL_LOGD(...) ((void) 0)
+#endif
 
 struct PatchEntry {
     uintptr_t address;
@@ -38,6 +50,8 @@ struct PatchEntry {
     uint8_t size;
     bool thumb;
     bool active;
+    bool patched;
+    bool saw_redirectable_syscall;
     uint32_t non_termination_count;
     char path[kMaxPath];
 };
@@ -53,6 +67,7 @@ static std::atomic<bool> gInstalled(false);
 static std::atomic<bool> gBlockTerminationSyscalls(false);
 static volatile sig_atomic_t gPatchCount = 0;
 static PatchEntry gPatches[kMaxPatches];
+static pthread_mutex_t gPatchRegistryLock = PTHREAD_MUTEX_INITIALIZER;
 static struct sigaction gPreviousTrapAction = {};
 static bool gHasPreviousTrapAction = false;
 static pid_t gRootPid = -1;
@@ -62,6 +77,23 @@ static __thread void *gThreadTrapAltStack = nullptr;
 #if defined(__arm__)
 static __thread RawSyscallRedirectTelemetry gLastRedirectTelemetry;
 #endif
+
+static bool patchBytes(uintptr_t address, const void *trap, size_t size, int restore_prot);
+static uintptr_t patchedInstructionFileOffset(const PatchEntry &entry);
+
+class ScopedPatchRegistryLock {
+public:
+    ScopedPatchRegistryLock() {
+        pthread_mutex_lock(&gPatchRegistryLock);
+    }
+
+    ~ScopedPatchRegistryLock() {
+        pthread_mutex_unlock(&gPatchRegistryLock);
+    }
+
+    ScopedPatchRegistryLock(const ScopedPatchRegistryLock &) = delete;
+    ScopedPatchRegistryLock &operator=(const ScopedPatchRegistryLock &) = delete;
+};
 
 static bool isTerminationSignal(int signal) {
     return signal == SIGKILL || signal == SIGTERM || signal == SIGABRT;
@@ -376,12 +408,73 @@ static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc) {
 }
 #endif
 
-static bool shouldLogNonTerminationTrap(PatchEntry *entry) {
+static uint32_t incrementNonTerminationCount(PatchEntry *entry) {
     if (entry == nullptr) {
+        return 0;
+    }
+    return ++entry->non_termination_count;
+}
+
+static bool shouldLogNonTerminationTrap(uint32_t count) {
+    if (count == 0) {
         return false;
     }
-    uint32_t count = ++entry->non_termination_count;
     return count <= 3 || (count & (count - 1)) == 0;
+}
+
+static bool isHighFrequencyPassthroughSyscall(int sysno) {
+    switch (sysno) {
+#ifdef __NR_read
+        case __NR_read:
+            return true;
+#endif
+#ifdef __NR_lseek
+        case __NR_lseek:
+            return true;
+#endif
+        default:
+            return false;
+    }
+}
+
+static bool shouldRestoreHotPassthroughPatch(PatchEntry *entry, int sysno, uint32_t count) {
+    return entry != nullptr
+           && entry->active
+           && entry->patched
+           && !entry->saw_redirectable_syscall
+           && isHighFrequencyPassthroughSyscall(sysno)
+           && count >= kHotPassthroughRestoreThreshold;
+}
+
+static bool restorePatch(PatchEntry *entry) {
+    if (entry == nullptr || !entry->active || !entry->patched) {
+        return false;
+    }
+    if (!patchBytes(entry->address, &entry->original, entry->size, entry->prot)) {
+        return false;
+    }
+    entry->patched = false;
+    return true;
+}
+
+static void restoreHotPassthroughPatch(PatchEntry *entry, int sysno, uint32_t count) {
+    if (!shouldRestoreHotPassthroughPatch(entry, sysno, count)) {
+        return;
+    }
+    if (restorePatch(entry)) {
+        RAW_SYSCALL_LOGD("raw syscall hot passthrough restored sys=%s(%d) pc=0x%" PRIxPTR
+                         " count=%u map=0x%" PRIxPTR "-0x%" PRIxPTR
+                         " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR " path=%s",
+                         syscallName(sysno),
+                         sysno,
+                         entry->address,
+                         count,
+                         entry->map_start,
+                         entry->map_end,
+                         entry->map_offset,
+                         patchedInstructionFileOffset(*entry),
+                         entry->path);
+    }
 }
 
 static const char *pathOrEmpty(const char *path) {
@@ -409,6 +502,17 @@ static PatchEntry *findPatch(uintptr_t pc, uintptr_t fault_address) {
         if (entry.address == pc
             || entry.address + entry.size == pc
             || (fault_address != 0 && entry.address == fault_address)) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+static PatchEntry *findRecordedPatch(uintptr_t address) {
+    const int count = gPatchCount;
+    for (int i = 0; i < count; i++) {
+        PatchEntry &entry = gPatches[i];
+        if (entry.active && entry.address == address) {
             return &entry;
         }
     }
@@ -508,62 +612,64 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
             return;
         }
     } else {
+        const uint32_t count = incrementNonTerminationCount(entry);
         long result = emulateRedirectableRawSyscall(sysno, mc);
-        if (shouldLogNonTerminationTrap(entry)) {
+        if (gLastRedirectTelemetry.redirectable) {
+            entry->saw_redirectable_syscall = true;
+        }
+        if (shouldLogNonTerminationTrap(count)) {
             if (gLastRedirectTelemetry.redirected) {
-                __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                                    "raw syscall file redirected sys=%s(%d) pc=0x%" PRIxPTR
-                                    " path=%s redirected=%s result=0x%lx count=%u"
-                                    " map=0x%" PRIxPTR "-0x%" PRIxPTR
-                                    " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR
-                                    " pathMap=%s",
-                                    syscallName(sysno),
-                                    sysno,
-                                    entry->address,
-                                    gLastRedirectTelemetry.original,
-                                    gLastRedirectTelemetry.redirected_path,
-                                    static_cast<unsigned long>(result),
-                                    entry->non_termination_count,
-                                    entry->map_start,
-                                    entry->map_end,
-                                    entry->map_offset,
-                                    patchedInstructionFileOffset(*entry),
-                                    entry->path);
+                RAW_SYSCALL_LOGD("raw syscall file redirected sys=%s(%d) pc=0x%" PRIxPTR
+                                 " path=%s redirected=%s result=0x%lx count=%u"
+                                 " map=0x%" PRIxPTR "-0x%" PRIxPTR
+                                 " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR
+                                 " pathMap=%s",
+                                 syscallName(sysno),
+                                 sysno,
+                                 entry->address,
+                                 gLastRedirectTelemetry.original,
+                                 gLastRedirectTelemetry.redirected_path,
+                                 static_cast<unsigned long>(result),
+                                 count,
+                                 entry->map_start,
+                                 entry->map_end,
+                                 entry->map_offset,
+                                 patchedInstructionFileOffset(*entry),
+                                 entry->path);
             } else if (gLastRedirectTelemetry.redirectable) {
-                __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                                    "raw syscall file passthrough sys=%s(%d) pc=0x%" PRIxPTR
-                                    " path=%s result=0x%lx count=%u map=0x%" PRIxPTR
-                                    "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR
-                                    " pcFileOff=0x%" PRIxPTR " pathMap=%s",
-                                    syscallName(sysno),
-                                    sysno,
-                                    entry->address,
-                                    gLastRedirectTelemetry.original,
-                                    static_cast<unsigned long>(result),
-                                    entry->non_termination_count,
-                                    entry->map_start,
-                                    entry->map_end,
-                                    entry->map_offset,
-                                    patchedInstructionFileOffset(*entry),
-                                    entry->path);
+                RAW_SYSCALL_LOGD("raw syscall file passthrough sys=%s(%d) pc=0x%" PRIxPTR
+                                 " path=%s result=0x%lx count=%u map=0x%" PRIxPTR
+                                 "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR
+                                 " pcFileOff=0x%" PRIxPTR " pathMap=%s",
+                                 syscallName(sysno),
+                                 sysno,
+                                 entry->address,
+                                 gLastRedirectTelemetry.original,
+                                 static_cast<unsigned long>(result),
+                                 count,
+                                 entry->map_start,
+                                 entry->map_end,
+                                 entry->map_offset,
+                                 patchedInstructionFileOffset(*entry),
+                                 entry->path);
             } else {
-                __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                                    "raw syscall non-termination emulated sys=%s(%d) pc=0x%" PRIxPTR
-                                    " result=0x%lx count=%u map=0x%" PRIxPTR "-0x%" PRIxPTR
-                                    " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR " path=%s",
-                                    syscallName(sysno),
-                                    sysno,
-                                    entry->address,
-                                    static_cast<unsigned long>(result),
-                                    entry->non_termination_count,
-                                    entry->map_start,
-                                    entry->map_end,
-                                    entry->map_offset,
-                                    patchedInstructionFileOffset(*entry),
-                                    entry->path);
+                RAW_SYSCALL_LOGD("raw syscall non-termination emulated sys=%s(%d) pc=0x%" PRIxPTR
+                                 " result=0x%lx count=%u map=0x%" PRIxPTR "-0x%" PRIxPTR
+                                 " mapOff=0x%" PRIxPTR " pcFileOff=0x%" PRIxPTR " path=%s",
+                                 syscallName(sysno),
+                                 sysno,
+                                 entry->address,
+                                 static_cast<unsigned long>(result),
+                                 count,
+                                 entry->map_start,
+                                 entry->map_end,
+                                 entry->map_offset,
+                                 patchedInstructionFileOffset(*entry),
+                                 entry->path);
             }
         }
         mc.arm_r0 = static_cast<unsigned long>(result);
+        restoreHotPassthroughPatch(entry, sysno, count);
     }
     mc.arm_pc = static_cast<unsigned long>(entry->address + entry->size);
 #else
@@ -679,6 +785,8 @@ static void rememberPatch(uintptr_t address, uintptr_t map_start, uintptr_t map_
     entry.size = size;
     entry.thumb = thumb;
     entry.active = true;
+    entry.patched = true;
+    entry.saw_redirectable_syscall = false;
     entry.non_termination_count = 0;
     snprintf(entry.path, sizeof(entry.path), "%s", pathOrEmpty(path));
     gPatchCount = index + 1;
@@ -692,10 +800,9 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
         return;
     }
     if (isExcludedVolatileExecutableMap(path)) {
-        __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                            "raw syscall probe skipped volatile executable map=0x%" PRIxPTR
-                            "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
-                            start, end, map_offset, pathOrEmpty(path));
+        RAW_SYSCALL_LOGD("raw syscall probe skipped volatile executable map=0x%" PRIxPTR
+                         "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
+                         start, end, map_offset, pathOrEmpty(path));
         return;
     }
     if (!shouldScanPath(path, include_file_backed_app_code)) {
@@ -707,6 +814,9 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
     for (uintptr_t address = start; address + sizeof(uint16_t) <= end; address += sizeof(uint16_t)) {
         uint16_t value = *reinterpret_cast<uint16_t *>(address);
         if (value != 0xdf00) {
+            continue;
+        }
+        if (findRecordedPatch(address) != nullptr) {
             continue;
         }
         const uint16_t bkpt = 0xbe00;
@@ -722,6 +832,9 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
         if (value != 0xef000000) {
             continue;
         }
+        if (findRecordedPatch(address) != nullptr) {
+            continue;
+        }
         const uint32_t bkpt = 0xe1200070;
         if (patchBytes(address, &bkpt, sizeof(bkpt), restore_prot)) {
             rememberPatch(address, start, end, map_offset, restore_prot, value, sizeof(value), false, path);
@@ -730,10 +843,9 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
     }
 
     if (patched > 0) {
-        __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                            "raw syscall probe patched %zu svc instructions map=0x%" PRIxPTR
-                            "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
-                            patched, start, end, map_offset, pathOrEmpty(path));
+        RAW_SYSCALL_LOGD("raw syscall probe patched %zu svc instructions map=0x%" PRIxPTR
+                         "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR " path=%s",
+                         patched, start, end, map_offset, pathOrEmpty(path));
     }
 #else
     (void) start;
@@ -857,11 +969,11 @@ void installRawSyscallEnvironmentProbe() {
     if (!ensureRawSyscallProbeInstalled()) {
         return;
     }
+    ScopedPatchRegistryLock lock;
     scanProcessMaps(true);
-    __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                        "raw syscall environment probe installed root=%d patches=%d",
-                        static_cast<int>(gRootPid),
-                        static_cast<int>(gPatchCount));
+    RAW_SYSCALL_LOGD("raw syscall environment probe installed root=%d patches=%d",
+                     static_cast<int>(gRootPid),
+                     static_cast<int>(gPatchCount));
 #else
     __android_log_print(ANDROID_LOG_WARN, kTag,
                         "raw syscall environment probe unsupported on this ABI");
@@ -874,11 +986,11 @@ void installRawSyscallTerminationProbe() {
     if (!ensureRawSyscallProbeInstalled()) {
         return;
     }
+    ScopedPatchRegistryLock lock;
     scanProcessMaps(true);
-    __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                        "raw syscall termination probe installed root=%d patches=%d",
-                        static_cast<int>(gRootPid),
-                        static_cast<int>(gPatchCount));
+    RAW_SYSCALL_LOGD("raw syscall termination probe installed root=%d patches=%d",
+                     static_cast<int>(gRootPid),
+                     static_cast<int>(gPatchCount));
 #else
     __android_log_print(ANDROID_LOG_WARN, kTag,
                         "raw syscall termination probe unsupported on this ABI");
@@ -893,13 +1005,13 @@ void refreshRawSyscallProbeMaps() {
     if (!ensureCurrentThreadTrapAlternateStack()) {
         return;
     }
+    ScopedPatchRegistryLock lock;
     int before = static_cast<int>(gPatchCount);
     scanProcessMaps(false);
-    __android_log_print(ANDROID_LOG_DEBUG, kTag,
-                        "raw syscall probe refreshed root=%d patches=%d added=%d",
-                        static_cast<int>(gRootPid),
-                        static_cast<int>(gPatchCount),
-                        static_cast<int>(gPatchCount) - before);
+    RAW_SYSCALL_LOGD("raw syscall probe refreshed root=%d patches=%d added=%d",
+                     static_cast<int>(gRootPid),
+                     static_cast<int>(gPatchCount),
+                     static_cast<int>(gPatchCount) - before);
 #else
     __android_log_print(ANDROID_LOG_WARN, kTag,
                         "raw syscall probe refresh unsupported on this ABI");

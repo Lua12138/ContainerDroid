@@ -83,13 +83,16 @@ public class RawSyscallTerminationProbeSourceTest {
         assertTrue("protected loaders can place raw syscall stubs in executable anonymous bss maps",
                 source.contains("isPatchableAnonymousExecutableMap")
                         && source.contains("strncmp(path, \"[anon:.bss]\""));
-        assertTrue("non-termination traps from anonymous code should keep the SVC trap active",
+        assertTrue("non-termination traps from anonymous code should keep the SVC trap active until a high-frequency passthrough site is proven hot",
                 source.contains("raw syscall non-termination emulated")
                         && source.contains("emulateRawSyscall(sysno, mc)")
                         && source.contains("entry->address + entry->size"));
-        assertFalse("a generic raw syscall trampoline must not be unpatched after its first benign call",
-                source.contains("raw syscall non-termination restored")
-                        || source.contains("mc.arm_pc = static_cast<unsigned long>(entry->address);"));
+        assertTrue("a generic raw syscall trampoline must not be unpatched after its first benign call; only hot passthrough read/lseek sites may be restored after a threshold",
+                source.contains("kHotPassthroughRestoreThreshold")
+                        && source.contains("shouldRestoreHotPassthroughPatch")
+                        && source.contains("count >= kHotPassthroughRestoreThreshold"));
+        assertFalse("the handler must continue past the emulated SVC instead of retrying the same patched instruction",
+                source.contains("mc.arm_pc = static_cast<unsigned long>(entry->address);"));
         assertTrue("anonymous diagnostics must still skip broad JIT/Pine executable maps",
                 source.contains("isExcludedVolatileExecutableMap")
                         && source.contains("strncmp(path, \"/memfd:\", 7)")
@@ -109,6 +112,76 @@ public class RawSyscallTerminationProbeSourceTest {
         assertTrue("rate-limited logs should include the count so repeated trampoline use remains visible",
                 source.contains("count=%u")
                         && source.contains("entry->non_termination_count"));
+    }
+
+    @Test
+    public void rawSyscallProbeRestoresOnlyHotReadAndLseekPassthroughSites() throws Exception {
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String restorePredicate = sliceBetweenOrTail(source,
+                "static bool shouldRestoreHotPassthroughPatch",
+                "static bool restorePatch");
+        String handler = sliceBetweenOrTail(source,
+                "static void sigtrapHandler",
+                "static int protFromPerms");
+
+        assertTrue("hot passthrough restoration should be explicit, thresholded, and limited to syscall sites that remain patched",
+                source.contains("kHotPassthroughRestoreThreshold")
+                        && source.contains("restorePatch(PatchEntry *entry)")
+                        && restorePredicate.contains("entry->patched")
+                        && restorePredicate.contains("count >= kHotPassthroughRestoreThreshold"));
+        assertTrue("only high-frequency non-path passthrough syscalls should be candidates for unpatching",
+                restorePredicate.contains("isHighFrequencyPassthroughSyscall(sysno)")
+                        && source.contains("case __NR_read:")
+                        && source.contains("case __NR_lseek:")
+                        && !restorePredicate.contains("__NR_open")
+                        && !restorePredicate.contains("__NR_openat")
+                        && !restorePredicate.contains("__NR_access")
+                        && !restorePredicate.contains("__NR_readlink"));
+        assertTrue("path/syscall redirect sites must remain patched even if they share the same anonymous loader map",
+                source.contains("saw_redirectable_syscall")
+                        && handler.contains("entry->saw_redirectable_syscall = true")
+                        && restorePredicate.contains("!entry->saw_redirectable_syscall"));
+        assertTrue("the current trapped syscall should still be emulated before the hot site is restored for later calls",
+                handler.contains("long result = emulateRedirectableRawSyscall(sysno, mc)")
+                        && handler.contains("const uint32_t count = incrementNonTerminationCount(entry)")
+                        && handler.indexOf("long result = emulateRedirectableRawSyscall(sysno, mc)")
+                        < handler.indexOf("restoreHotPassthroughPatch(entry, sysno, count)"));
+        assertFalse("hot passthrough restoration must stay generic and sample agnostic",
+                source.contains("com.bestv")
+                        || source.contains("TelnetCommand")
+                        || source.contains("WONT")
+                        || source.contains("jiagu"));
+    }
+
+    @Test
+    public void rawSyscallProbeSerializesRuntimeRefreshToAvoidDuplicateSvcPatches() throws Exception {
+        String source = readSource("Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+        String refresh = sliceBetweenOrTail(source,
+                "void refreshRawSyscallProbeMaps()",
+                "} // namespace rawsyscall");
+        String installEnvironment = sliceBetweenOrTail(source,
+                "void installRawSyscallEnvironmentProbe()",
+                "void installRawSyscallTerminationProbe()");
+        String installTermination = sliceBetweenOrTail(source,
+                "void installRawSyscallTerminationProbe()",
+                "void refreshRawSyscallProbeMaps()");
+
+        assertTrue("raw syscall patch registry updates must be serialized because app-owned pthreads can refresh concurrently and otherwise record duplicate SVC patch entries",
+                source.contains("gPatchRegistryLock")
+                        && source.contains("ScopedPatchRegistryLock"));
+        assertTrue("all public scan entry points should acquire the same registry lock before scanProcessMaps mutates gPatches/gPatchCount",
+                refresh.contains("ScopedPatchRegistryLock lock")
+                        && installEnvironment.contains("ScopedPatchRegistryLock lock")
+                        && installTermination.contains("ScopedPatchRegistryLock lock"));
+        assertTrue("the duplicate check must run while the refresh/install lock is held",
+                source.contains("findRecordedPatch(address)")
+                        && source.contains("scanProcessMaps(false);")
+                        && source.contains("scanProcessMaps(true);"));
+        assertFalse("registry serialization must stay generic and sample agnostic",
+                source.contains("com.bestv")
+                        || source.contains("TelnetCommand")
+                        || source.contains("WONT")
+                        || source.contains("jiagu"));
     }
 
     @Test
@@ -155,7 +228,8 @@ public class RawSyscallTerminationProbeSourceTest {
                 source.contains("releaseRedirectedRawPath(pathname, redirected_path)"));
         assertTrue("raw file syscall telemetry should be separate from termination telemetry and rate limited by the existing SVC-site counter",
                 source.contains("raw syscall file redirected")
-                        && source.contains("shouldLogNonTerminationTrap(entry)"));
+                        && source.contains("const uint32_t count = incrementNonTerminationCount(entry)")
+                        && source.contains("shouldLogNonTerminationTrap(count)"));
         assertFalse("raw syscall IO redirection must stay package/sample agnostic",
                 source.contains("com.bestv")
                         || source.contains("TelnetCommand")

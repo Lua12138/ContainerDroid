@@ -107,6 +107,12 @@ public class BActivityThread extends IBActivityThread.Stub {
             "blackbox.native_termination_shield";
     private static final String NATIVE_TERMINATION_SHIELD_SYSTEM_PROPERTY =
             "debug.blackbox.native_termination_shield";
+    private static final String APP_LIFECYCLE_DIAG_ENV =
+            "BLACKBOX_APP_LIFECYCLE_DIAG";
+    private static final String APP_LIFECYCLE_DIAG_PROPERTY =
+            "blackbox.app_lifecycle_diag";
+    private static final String APP_LIFECYCLE_DIAG_SYSTEM_PROPERTY =
+            "debug.blackbox.app_lifecycle_diag";
 
     private static BActivityThread sBActivityThread;
     private AppBindData mBoundApplication;
@@ -469,6 +475,14 @@ public class BActivityThread extends IBActivityThread.Stub {
                         NATIVE_TERMINATION_SHIELD_SYSTEM_PROPERTY));
     }
 
+    private static boolean isAppLifecycleDiagnosticsEnabled() {
+        return BlackBoxCore.get().isDiagnosticLogcatEnabled()
+                && (DiagnosticSwitch.isTruthy(System.getenv(APP_LIFECYCLE_DIAG_ENV))
+                || DiagnosticSwitch.isTruthy(System.getProperty(APP_LIFECYCLE_DIAG_PROPERTY))
+                || DiagnosticSwitch.isTruthy(SystemPropertiesCompat.get(
+                        APP_LIFECYCLE_DIAG_SYSTEM_PROPERTY)));
+    }
+
     public void ensureInitialApplicationState(String stage) {
         if (mBoundApplication == null || mBoundApplication.info == null) {
             return;
@@ -529,17 +543,19 @@ public class BActivityThread extends IBActivityThread.Stub {
             }
             if (syncedApplication != localApplication || restoredThreadInitial || restoredLoadedApk
                     || threadRestoreError != null || loadedApkRestoreError != null) {
-                Slog.i(TAG, "Synced initial application from runtime"
-                        + " previous=" + describeApplication(localApplication)
-                        + " synced=" + describeApplication(syncedApplication)
-                        + " loadedApk=" + describeApplication(loadedApkApplication)
-                        + " threadInitial=" + describeApplication(threadInitialApplication)
-                        + " restoredThreadInitial=" + restoredThreadInitial
-                        + " restoredLoadedApk=" + restoredLoadedApk
-                        + (threadRestoreError == null ? "" : " threadRestoreError=" + threadRestoreError)
-                        + (loadedApkRestoreError == null ? "" : " loadedApkRestoreError=" + loadedApkRestoreError));
+                if (isAppLifecycleDiagnosticsEnabled()) {
+                    Slog.i(TAG, "Synced initial application from runtime"
+                            + " previous=" + describeApplication(localApplication)
+                            + " synced=" + describeApplication(syncedApplication)
+                            + " loadedApk=" + describeApplication(loadedApkApplication)
+                            + " threadInitial=" + describeApplication(threadInitialApplication)
+                            + " restoredThreadInitial=" + restoredThreadInitial
+                            + " restoredLoadedApk=" + restoredLoadedApk
+                            + (threadRestoreError == null ? "" : " threadRestoreError=" + threadRestoreError)
+                            + (loadedApkRestoreError == null ? "" : " loadedApkRestoreError=" + loadedApkRestoreError));
+                }
             }
-        } else {
+        } else if (isAppLifecycleDiagnosticsEnabled()) {
             Slog.i(TAG, "Synced initial application from runtime"
                     + " previous=" + describeApplication(localApplication)
                     + " synced=null"
@@ -550,6 +566,9 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private static void logApplicationIdentity(String packageName, String processName, ApplicationInfo applicationInfo) {
+        if (!isAppLifecycleDiagnosticsEnabled()) {
+            return;
+        }
         int libcoreUid = -1;
         String libcoreUidError = null;
         try {
@@ -574,6 +593,9 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private static void logContextIdentity(String stage, Context context, String expectedPackage) {
+        if (!isAppLifecycleDiagnosticsEnabled()) {
+            return;
+        }
         if (context == null) {
             Slog.i(TAG, "Package context identity stage=" + stage
                     + " expectedPackage=" + expectedPackage
@@ -646,6 +668,9 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private static void logInitialApplicationState(String stage, Application localApplication, Object loadedApk) {
+        if (!isAppLifecycleDiagnosticsEnabled()) {
+            return;
+        }
         Application threadInitial = null;
         Application loadedApkApplication = null;
         String threadInitialError = null;
@@ -679,6 +704,9 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private static void logApplicationBoundary(String stage, Context context, Application application, Object loadedApk) {
+        if (!isAppLifecycleDiagnosticsEnabled()) {
+            return;
+        }
         Slog.i(TAG, "Application lifecycle boundary"
                 + " stage=" + stage
                 + " context=" + describeContext(context)

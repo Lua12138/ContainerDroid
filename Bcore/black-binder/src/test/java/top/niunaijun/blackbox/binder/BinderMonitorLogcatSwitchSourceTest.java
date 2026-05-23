@@ -24,6 +24,10 @@ public class BinderMonitorLogcatSwitchSourceTest {
         assertTrue("BinderMonitorConfig should hard-gate logcat with the compile-time switch",
                 config.contains("BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
                         && config.contains("private static boolean sanitizeLogcat"));
+        assertTrue("BinderMonitorConfig should hard-gate the monitor itself with the compile-time switch so no-log builds do not keep BinderProxy/Parcel Pine hooks or JSONL output alive",
+                config.contains("this.enabled = sanitizeEnabled(enabled);")
+                        && config.contains("private static boolean sanitizeEnabled(boolean requested)")
+                        && config.contains("return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && requested;"));
         assertTrue("BinderMonitorConfig should expose a runtime copy with a new logcat value",
                 config.contains("public BinderMonitorConfig withLogcat(boolean logcat)"));
         assertTrue("BActivityThread should apply the sandbox diagnostic logcat option to BinderMonitorConfig",

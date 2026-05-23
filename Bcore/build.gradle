@@ -13,6 +13,11 @@ def blackBoxBooleanOption = { String name, boolean defaultValue ->
     return defaultValue
 }
 
+def blackboxDiagnosticLogcatEnabledValue =
+        blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)
+def blackboxDexDumpEnabledValue =
+        blackBoxBooleanOption('blackboxDexDumpEnabled', true)
+
 android {
     namespace 'top.niunaijun.blackbox'
     compileSdk 28
@@ -27,9 +32,14 @@ android {
 
         consumerProguardFiles "consumer-rules.pro"
         buildConfigField "boolean", "BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED",
-                "${blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)}"
+                "${blackboxDiagnosticLogcatEnabledValue}"
         buildConfigField "boolean", "BLACKBOX_DEX_DUMP_ENABLED",
-                "${blackBoxBooleanOption('blackboxDexDumpEnabled', true)}"
+                "${blackboxDexDumpEnabledValue}"
+        externalNativeBuild {
+            cmake {
+                arguments "-DBLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${blackboxDiagnosticLogcatEnabledValue ? 1 : 0}"
+            }
+        }
         ndk {
             // 设置支持的SO库架构
             abiFilters 'armeabi-v7a', 'arm64-v8a'

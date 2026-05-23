@@ -216,6 +216,7 @@ static const char *kProcShimProperty = "debug.blackbox.proc_shim";
 static const char *kProcMapsPathSanitizeProperty = "debug.blackbox.maps_path_sanitize";
 static const char *kTransientProcMapsProperty = "debug.blackbox.transient_maps";
 static const char *kRawProcVirtualizationProperty = "debug.blackbox.raw_proc_virtual";
+static const char *kRawSyscallThreadRefreshProperty = "debug.blackbox.raw_syscall_thread_refresh";
 static const char *kProcessProbeProperty = "debug.blackbox.process_probe";
 static const char *kFileProbeProperty = "debug.blackbox.file_probe";
 static const char *kTerminationProbeProperty = "debug.blackbox.termination_probe";
@@ -630,6 +631,10 @@ bool isNativeCrashProbeEnabled() {
 
 bool isRawProcVirtualizationEnabled() {
     return blackbox::native_property::getBool(kRawProcVirtualizationProperty);
+}
+
+bool isRawSyscallThreadRefreshEnabled() {
+    return blackbox::native_property::getBoolDefaultTrue(kRawSyscallThreadRefreshProperty);
 }
 
 bool isNativeSandboxEnvironmentConfigured() {
@@ -3469,7 +3474,9 @@ struct AppOwnedPthreadStartContext {
 
 void *appOwnedPthreadStartTrampoline(void *opaque) {
     rememberAppOwnedNativeThread(pthread_self());
-    blackbox::rawsyscall::refreshRawSyscallProbeMaps();
+    if (isRawSyscallThreadRefreshEnabled()) {
+        blackbox::rawsyscall::refreshRawSyscallProbeMaps();
+    }
     auto *context = reinterpret_cast<AppOwnedPthreadStartContext *>(opaque);
     if (context == nullptr) {
         return nullptr;
@@ -4223,6 +4230,22 @@ bool shouldVirtualizeDirectProcMapsOpen(void *caller) {
     return hasAppOwnedNativeFrame();
 }
 
+bool isProcShimReadCandidatePath(const char *pathname) {
+    return procShimFdForReadPath(pathname) >= 0;
+}
+
+bool isVirtualProcIdentityReadCandidatePath(const char *pathname) {
+    return isProcStatusProbePath(pathname, nullptr)
+           || isProcCgroupProbePath(pathname)
+           || isProcAttrCurrentProbePath(pathname);
+}
+
+bool shouldCheckDirectVirtualProcRead(const char *pathname) {
+    return shouldUseTransientProcMaps(pathname)
+           || isProcShimReadCandidatePath(pathname)
+           || isVirtualProcIdentityReadCandidatePath(pathname);
+}
+
 extern "C" int blackbox_direct_open(const char *pathname, int flags, ...) {
     va_list args;
     va_start(args, flags);
@@ -4235,7 +4258,8 @@ extern "C" int blackbox_direct_open(const char *pathname, int flags, ...) {
 
     const char *redirected = redirectAbsolutePath(pathname);
     if (isReadOnlyOpenFlags(flags)) {
-        bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
+        bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(pathname)
+                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
         if (virtualize_proc_maps) {
             int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));
             if (transient_maps >= 0) {
@@ -4276,7 +4300,8 @@ extern "C" int blackbox_direct_open_2(const char *pathname, int flags) {
 
     const char *redirected = redirectAbsolutePath(pathname);
     if (isReadOnlyOpenFlags(flags)) {
-        bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
+        bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(pathname)
+                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
         if (virtualize_proc_maps) {
             int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));
             if (transient_maps >= 0) {
@@ -4324,7 +4349,8 @@ extern "C" int blackbox_direct_openat(int dirfd, const char *pathname, int flags
     ResolvedPath resolved_log = resolveOpenAtPathForLog(dirfd, pathname);
     const char *redirected = redirectOpenAtPath(dirfd, pathname, &use_absolute);
     if (isReadOnlyOpenFlags(flags)) {
-        bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
+        bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(resolved_log.path)
+                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
         if (virtualize_proc_maps) {
             int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));
             if (transient_maps >= 0) {
@@ -4375,7 +4401,8 @@ extern "C" int blackbox_direct_openat_2(int dirfd, const char *pathname, int fla
     ResolvedPath resolved_log = resolveOpenAtPathForLog(dirfd, pathname);
     const char *redirected = redirectOpenAtPath(dirfd, pathname, &use_absolute);
     if (isReadOnlyOpenFlags(flags)) {
-        bool virtualize_proc_maps = shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
+        bool virtualize_proc_maps = shouldCheckDirectVirtualProcRead(resolved_log.path)
+                                    && shouldVirtualizeDirectProcMapsOpen(__builtin_return_address(0));
         if (virtualize_proc_maps) {
             int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));
             if (transient_maps >= 0) {
