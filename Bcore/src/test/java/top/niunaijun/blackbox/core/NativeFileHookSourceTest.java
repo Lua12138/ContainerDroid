@@ -118,7 +118,7 @@ public class NativeFileHookSourceTest {
         assertTrue("Successful dynamic native loads may re-run PLT patching only when explicitly enabled",
                 source.contains("patchAfterDynamicLoad(\"dlopen\"")
                         && source.contains("patchAfterDynamicLoad(\"android_dlopen_ext\"")
-                        && source.contains("if (result != nullptr && isEarlyDlopenRepatchEnabled())")
+                        && source.contains("if (isEarlyDlopenRepatchEnabled())")
                         && source.contains("installNativeFileHooks();"));
         assertTrue("Dynamic loader entries themselves must be PLT-patched only when dynamic-loader diagnostics or early re-patching are enabled",
                 source.contains("void *dlopen_hook = shouldPatchDlopen()")
@@ -197,6 +197,40 @@ public class NativeFileHookSourceTest {
                         < directOpen.indexOf("shouldVirtualizeDirectProcMapsOpen")
                         && directOpenAt.indexOf("shouldCheckDirectVirtualProcRead(resolved_log.path)")
                         < directOpenAt.indexOf("shouldVirtualizeDirectProcMapsOpen"));
+    }
+
+    @Test
+    public void callerMapResolutionCachesShortLivedPositiveEntriesAndInvalidatesOnMapChanges() throws Exception {
+        String source = readSource(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
+        String resolver = sliceBetween(source,
+                "bool resolveMemoryMapEntry(void *caller, MemoryMapEntry *entry)",
+                "void sanitizeFileToken(");
+        String dynamicLoad = sliceBetween(source,
+                "void patchAfterDynamicLoad(",
+                "void *resolveDlsymReplacement(");
+        String environment = sliceBetween(source,
+                "void setNativeSandboxEnvironmentInternal(",
+                "extern \"C\" void setNativeSandboxEnvironment(");
+
+        assertTrue("caller map parsing should have a bounded positive cache instead of reopening /proc/self/maps for repeated caller PCs",
+                source.contains("CachedMemoryMapEntry")
+                        && source.contains("kMemoryMapEntryCacheTtlNs")
+                        && source.contains("lookupMemoryMapEntryCache")
+                        && source.contains("rememberMemoryMapEntryCache"));
+        assertTrue("resolveMemoryMapEntry should check the cache before opening /proc/self/maps",
+                resolver.indexOf("lookupMemoryMapEntryCache(address, entry)")
+                        >= 0
+                        && resolver.indexOf("lookupMemoryMapEntryCache(address, entry)")
+                        < resolver.indexOf("FILE *maps = openRealProcMapsFile();"));
+        assertTrue("only resolved positive map entries should be cached after a real maps scan succeeds",
+                resolver.contains("rememberMemoryMapEntryCache(address, candidate);")
+                        && !resolver.contains("rememberMemoryMapEntryCache(address, *entry);"));
+        assertTrue("successful dynamic loads must invalidate caller-map cache because /proc/self/maps changed",
+                dynamicLoad.contains("if (result != nullptr) {\n        invalidateMemoryMapEntryCache();"));
+        assertTrue("switching virtual sandbox identity must also invalidate cached map ownership decisions",
+                environment.contains("invalidateMemoryMapEntryCache();"));
     }
 
     @Test

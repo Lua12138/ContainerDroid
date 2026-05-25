@@ -1076,6 +1076,20 @@ struct MemoryMapEntry {
     char path[PATH_MAX] = {};
 };
 
+struct CachedMemoryMapEntry {
+    bool valid = false;
+    uint64_t generation = 0;
+    uint64_t expires_at_ns = 0;
+    MemoryMapEntry entry = {};
+};
+
+pthread_mutex_t gMemoryMapEntryCacheLock = PTHREAD_MUTEX_INITIALIZER;
+constexpr size_t kMemoryMapEntryCacheCount = 64;
+constexpr uint64_t kMemoryMapEntryCacheTtlNs = 250ULL * 1000ULL * 1000ULL;
+CachedMemoryMapEntry gMemoryMapEntryCache[kMemoryMapEntryCacheCount] = {};
+uint64_t gMemoryMapEntryCacheCursor = 0;
+uint64_t gMemoryMapEntryCacheGeneration = 1;
+
 bool writeExact(int fd, const void *data, size_t length);
 uint64_t monotonicTimeNs();
 
@@ -1136,6 +1150,66 @@ bool parseMemoryMapLine(const char *line, MemoryMapEntry *entry) {
     snprintf(entry->path, sizeof(entry->path), "%s",
              trimmed_path == nullptr || *trimmed_path == '\0' ? "anonymous" : trimmed_path);
     return true;
+}
+
+bool lookupMemoryMapEntryCache(uintptr_t address, MemoryMapEntry *entry) {
+    if (address == 0 || entry == nullptr) {
+        return false;
+    }
+    if (pthread_mutex_trylock(&gMemoryMapEntryCacheLock) != 0) {
+        return false;
+    }
+
+    bool found = false;
+    const uint64_t now = monotonicTimeNs();
+    const uint64_t generation = gMemoryMapEntryCacheGeneration;
+    for (CachedMemoryMapEntry &cached : gMemoryMapEntryCache) {
+        if (!cached.valid || cached.generation != generation) {
+            continue;
+        }
+        if (now > cached.expires_at_ns) {
+            cached.valid = false;
+            continue;
+        }
+        const MemoryMapEntry &candidate = cached.entry;
+        if (candidate.resolved && address >= candidate.start && address < candidate.end) {
+            *entry = candidate;
+            found = true;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&gMemoryMapEntryCacheLock);
+    return found;
+}
+
+void rememberMemoryMapEntryCache(uintptr_t address, const MemoryMapEntry &entry) {
+    if (!entry.resolved || entry.end <= entry.start || address < entry.start || address >= entry.end) {
+        return;
+    }
+    if (pthread_mutex_trylock(&gMemoryMapEntryCacheLock) != 0) {
+        return;
+    }
+
+    CachedMemoryMapEntry &cached =
+            gMemoryMapEntryCache[gMemoryMapEntryCacheCursor++ % kMemoryMapEntryCacheCount];
+    cached.valid = true;
+    cached.generation = gMemoryMapEntryCacheGeneration;
+    cached.expires_at_ns = monotonicTimeNs() + kMemoryMapEntryCacheTtlNs;
+    cached.entry = entry;
+
+    pthread_mutex_unlock(&gMemoryMapEntryCacheLock);
+}
+
+void invalidateMemoryMapEntryCache() {
+    pthread_mutex_lock(&gMemoryMapEntryCacheLock);
+    gMemoryMapEntryCacheGeneration++;
+    if (gMemoryMapEntryCacheGeneration == 0) {
+        gMemoryMapEntryCacheGeneration = 1;
+    }
+    gMemoryMapEntryCacheCursor = 0;
+    memset(gMemoryMapEntryCache, 0, sizeof(gMemoryMapEntryCache));
+    pthread_mutex_unlock(&gMemoryMapEntryCacheLock);
 }
 
 void resolveCallerLocation(void *caller, CallerLocation *location) {
@@ -1204,12 +1278,16 @@ bool resolveMemoryMapEntry(void *caller, MemoryMapEntry *entry) {
         return false;
     }
 
+    const uintptr_t address = reinterpret_cast<uintptr_t>(caller);
+    if (lookupMemoryMapEntryCache(address, entry)) {
+        return true;
+    }
+
     FILE *maps = openRealProcMapsFile();
     if (maps == nullptr) {
         return false;
     }
 
-    const uintptr_t address = reinterpret_cast<uintptr_t>(caller);
     char line[4096];
     while (fgets(line, sizeof(line), maps) != nullptr) {
         MemoryMapEntry candidate = {};
@@ -1221,6 +1299,7 @@ bool resolveMemoryMapEntry(void *caller, MemoryMapEntry *entry) {
         }
 
         *entry = candidate;
+        rememberMemoryMapEntryCache(address, candidate);
         break;
     }
     fclose(maps);
@@ -1934,8 +2013,11 @@ void logDlopenProbe(const char *api, const char *filename, void *result, void *c
 }
 
 void patchAfterDynamicLoad(const char *api, const char *filename, void *result, void *caller) {
-    if (result != nullptr && isEarlyDlopenRepatchEnabled()) {
-        installNativeFileHooks();
+    if (result != nullptr) {
+        invalidateMemoryMapEntryCache();
+        if (isEarlyDlopenRepatchEnabled()) {
+            installNativeFileHooks();
+        }
     }
     logDlopenProbe(api, filename, result, caller);
 }
@@ -4074,6 +4156,7 @@ extern "C" void setNativeFileVirtualUid(int virtual_uid) {
 }
 
 void setNativeSandboxEnvironmentInternal(const char *package_name, const char *process_name) {
+    invalidateMemoryMapEntryCache();
     if (package_name == nullptr || package_name[0] == '\0') {
         resetEarlyProcMapsShim();
         gNativeSandboxProcessName[0] = '\0';
