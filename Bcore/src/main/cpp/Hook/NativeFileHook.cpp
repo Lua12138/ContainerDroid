@@ -308,10 +308,13 @@ long rawKernelSyscall6(long sysno, long arg0, long arg1, long arg2,
     register long r3 __asm__("r3") = arg3;
     register long r4 __asm__("r4") = arg4;
     register long r5 __asm__("r5") = arg5;
-    register long r7 __asm__("r7") = sysno;
-    __asm__ volatile("svc #0"
+    register long ip __asm__("ip") = sysno;
+    __asm__ volatile("push {r7}\n"
+                     "mov r7, ip\n"
+                     "svc #0\n"
+                     "pop {r7}\n"
                      : "+r"(r0)
-                     : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(r7)
+                     : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(ip)
                      : "memory", "cc");
     return r0;
 }

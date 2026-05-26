@@ -73,11 +73,6 @@ static bool gHasPreviousTrapAction = false;
 static pid_t gRootPid = -1;
 static char gHostPackage[kMaxPath] = {};
 static constexpr size_t kTrapAltStackSize = 64 * 1024;
-static __thread bool gThreadTrapAltStackInstalled = false;
-static __thread void *gThreadTrapAltStack = nullptr;
-#if defined(__arm__)
-static __thread RawSyscallRedirectTelemetry gLastRedirectTelemetry;
-#endif
 
 static bool patchBytes(uintptr_t address, const void *trap, size_t size, int restore_prot);
 static uintptr_t patchedInstructionFileOffset(const PatchEntry &entry);
@@ -258,7 +253,8 @@ static void releaseRedirectedRawPath(const char *pathname, const char *redirecte
     }
 }
 
-static int openVirtualProcFdForRawSyscall(int sysno, long args[6], uintptr_t caller) {
+static int openVirtualProcFdForRawSyscall(int sysno, long args[6], uintptr_t caller,
+                                          RawSyscallRedirectTelemetry *telemetry) {
     const char *pathname = nullptr;
     int flags = 0;
     int dirfd = AT_FDCWD;
@@ -289,14 +285,14 @@ static int openVirtualProcFdForRawSyscall(int sysno, long args[6], uintptr_t cal
         return -1;
     }
 
-    gLastRedirectTelemetry.redirectable = true;
-    gLastRedirectTelemetry.redirected = true;
-    copyTelemetryPath(gLastRedirectTelemetry.original,
-                      sizeof(gLastRedirectTelemetry.original),
-                      pathname);
-    copyTelemetryPath(gLastRedirectTelemetry.redirected_path,
-                      sizeof(gLastRedirectTelemetry.redirected_path),
-                      "virtual-proc-fd");
+    if (telemetry != nullptr) {
+        telemetry->redirectable = true;
+        telemetry->redirected = true;
+        copyTelemetryPath(telemetry->original, sizeof(telemetry->original), pathname);
+        copyTelemetryPath(telemetry->redirected_path,
+                          sizeof(telemetry->redirected_path),
+                          "virtual-proc-fd");
+    }
     return fd;
 }
 
@@ -308,10 +304,13 @@ static long rawKernelSyscall6(long sysno, long arg0, long arg1, long arg2,
     register long r3 __asm__("r3") = arg3;
     register long r4 __asm__("r4") = arg4;
     register long r5 __asm__("r5") = arg5;
-    register long r7 __asm__("r7") = sysno;
-    __asm__ volatile("svc #0"
+    register long ip __asm__("ip") = sysno;
+    __asm__ volatile("push {r7}\n"
+                     "mov r7, ip\n"
+                     "svc #0\n"
+                     "pop {r7}\n"
                      : "+r"(r0)
-                     : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(r7)
+                     : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(ip)
                      : "memory", "cc");
     return r0;
 }
@@ -326,9 +325,8 @@ static long emulateRawSyscall(int sysno, const mcontext_t &mc) {
                              static_cast<long>(mc.arm_r5));
 }
 
-static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc) {
-    gLastRedirectTelemetry = {};
-
+static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc,
+                                          RawSyscallRedirectTelemetry *telemetry) {
     long args[6] = {
             static_cast<long>(mc.arm_r0),
             static_cast<long>(mc.arm_r1),
@@ -338,7 +336,11 @@ static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc) {
             static_cast<long>(mc.arm_r5),
     };
 
-    int virtual_proc_fd = openVirtualProcFdForRawSyscall(sysno, args, static_cast<uintptr_t>(mc.arm_pc));
+    int virtual_proc_fd = openVirtualProcFdForRawSyscall(
+            sysno,
+            args,
+            static_cast<uintptr_t>(mc.arm_pc),
+            telemetry);
     if (virtual_proc_fd >= 0) {
         return virtual_proc_fd;
     }
@@ -389,17 +391,17 @@ static long emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc) {
             return emulateRawSyscall(sysno, mc);
     }
 
-    gLastRedirectTelemetry.redirectable = true;
     const char *pathname = reinterpret_cast<const char *>(args[path_index]);
     const char *redirected_path = redirectRawSyscallPath(pathname);
     const bool redirected = redirected_path != pathname;
-    gLastRedirectTelemetry.redirected = redirected;
-    copyTelemetryPath(gLastRedirectTelemetry.original,
-                      sizeof(gLastRedirectTelemetry.original),
-                      pathname);
-    copyTelemetryPath(gLastRedirectTelemetry.redirected_path,
-                      sizeof(gLastRedirectTelemetry.redirected_path),
-                      redirected_path);
+    if (telemetry != nullptr) {
+        telemetry->redirectable = true;
+        telemetry->redirected = redirected;
+        copyTelemetryPath(telemetry->original, sizeof(telemetry->original), pathname);
+        copyTelemetryPath(telemetry->redirected_path,
+                          sizeof(telemetry->redirected_path),
+                          redirected_path);
+    }
     args[path_index] = reinterpret_cast<long>(redirected_path);
 
     long result = rawKernelSyscall6(sysno, args[0], args[1], args[2],
@@ -614,12 +616,13 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
         }
     } else {
         const uint32_t count = incrementNonTerminationCount(entry);
-        long result = emulateRedirectableRawSyscall(sysno, mc);
-        if (gLastRedirectTelemetry.redirectable) {
+        RawSyscallRedirectTelemetry telemetry = {};
+        long result = emulateRedirectableRawSyscall(sysno, mc, &telemetry);
+        if (telemetry.redirectable) {
             entry->saw_redirectable_syscall = true;
         }
         if (shouldLogNonTerminationTrap(count)) {
-            if (gLastRedirectTelemetry.redirected) {
+            if (telemetry.redirected) {
                 RAW_SYSCALL_LOGD("raw syscall file redirected sys=%s(%d) pc=0x%" PRIxPTR
                                  " path=%s redirected=%s result=0x%lx count=%u"
                                  " map=0x%" PRIxPTR "-0x%" PRIxPTR
@@ -628,8 +631,8 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                                  syscallName(sysno),
                                  sysno,
                                  entry->address,
-                                 gLastRedirectTelemetry.original,
-                                 gLastRedirectTelemetry.redirected_path,
+                                 telemetry.original,
+                                 telemetry.redirected_path,
                                  static_cast<unsigned long>(result),
                                  count,
                                  entry->map_start,
@@ -637,7 +640,7 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                                  entry->map_offset,
                                  patchedInstructionFileOffset(*entry),
                                  entry->path);
-            } else if (gLastRedirectTelemetry.redirectable) {
+            } else if (telemetry.redirectable) {
                 RAW_SYSCALL_LOGD("raw syscall file passthrough sys=%s(%d) pc=0x%" PRIxPTR
                                  " path=%s result=0x%lx count=%u map=0x%" PRIxPTR
                                  "-0x%" PRIxPTR " mapOff=0x%" PRIxPTR
@@ -645,7 +648,7 @@ static void sigtrapHandler(int signo, siginfo_t *info, void *context_raw) {
                                  syscallName(sysno),
                                  sysno,
                                  entry->address,
-                                 gLastRedirectTelemetry.original,
+                                 telemetry.original,
                                  static_cast<unsigned long>(result),
                                  count,
                                  entry->map_start,
@@ -915,8 +918,18 @@ static bool installTrapHandler() {
     return true;
 }
 
+static bool currentThreadHasTrapAlternateStack() {
+    stack_t current_stack = {};
+    if (sigaltstack(nullptr, &current_stack) != 0) {
+        return false;
+    }
+    return (current_stack.ss_flags & SS_DISABLE) == 0
+           && current_stack.ss_sp != nullptr
+           && current_stack.ss_size >= MINSIGSTKSZ;
+}
+
 static bool ensureCurrentThreadTrapAlternateStack() {
-    if (gThreadTrapAltStackInstalled) {
+    if (currentThreadHasTrapAlternateStack()) {
         return true;
     }
     void *stack_memory = mmap(nullptr,
@@ -940,8 +953,6 @@ static bool ensureCurrentThreadTrapAlternateStack() {
         munmap(stack_memory, kTrapAltStackSize);
         return false;
     }
-    gThreadTrapAltStack = stack_memory;
-    gThreadTrapAltStackInstalled = true;
     return true;
 }
 
