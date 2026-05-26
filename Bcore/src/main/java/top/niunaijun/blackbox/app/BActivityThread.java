@@ -368,7 +368,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
         ContextCompat.fixVirtual(packageContext, packageName);
-        NativeCore.setNativeSandboxEnvironment(packageName, processName);
+        NativeCore.setNativeSandboxEnvironment(packageName, processName, BlackBoxCore.getHostPkg());
         if (isNativeTerminationShieldDiagnosticEnabled()) {
             NativeCore.setNativeTerminationShieldPackage(packageName);
         }

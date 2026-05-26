@@ -25,6 +25,12 @@ import androidx.navigation.navArgument
 class MainActivity : ComponentActivity() {
     private lateinit var viewModel: OmmiAppsViewModel
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleTestIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
@@ -34,6 +40,9 @@ class MainActivity : ComponentActivity() {
                 this,
                 OmmiAppsViewModel.Factory(repository, applicationContext),
             )[OmmiAppsViewModel::class.java]
+            if (handleTestIntent(intent)) {
+                return
+            }
             setContent {
                 OmmiTheme {
                     OmmiApp(viewModel = viewModel)
@@ -43,6 +52,14 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "Critical failure in MainActivity.onCreate", throwable)
             throw throwable
         }
+    }
+
+    private fun handleTestIntent(intent: Intent?): Boolean {
+        if (!OmmiBlackBoxTestConfig.shouldRun(intent)) {
+            return false
+        }
+        OmmiBlackBoxTestRunner.start(this, OmmiBlackBoxTestConfig.getTestPackage(intent))
+        return true
     }
 
     private companion object {

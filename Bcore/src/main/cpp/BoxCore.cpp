@@ -32,7 +32,9 @@
 void *fake_dlopen(const char *libpath, int flags);
 void *fake_dlsym(void *handle, const char *name);
 
-extern "C" void setNativeSandboxEnvironment(const char *package_name, const char *process_name);
+extern "C" void setNativeSandboxEnvironment(const char *package_name,
+                                            const char *process_name,
+                                            const char *host_package);
 extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name);
 extern "C" void setNativeTerminationShieldPackage(const char *package_name);
 extern "C" void disableEarlyProcMapsShim();
@@ -199,10 +201,15 @@ void configureNativeSandboxEnvironment(JNIEnv *env, jclass clazz, jstring packag
     }
 }
 
-void configureNativeSandboxEnvironmentWithProcess(JNIEnv *env, jclass clazz, jstring packageName, jstring processName) {
+void configureNativeSandboxEnvironmentWithProcess(JNIEnv *env, jclass clazz, jstring packageName,
+                                                  jstring processName, jstring hostPackageName) {
     const char *package_name = packageName == nullptr ? nullptr : env->GetStringUTFChars(packageName, JNI_FALSE);
     const char *process_name = processName == nullptr ? nullptr : env->GetStringUTFChars(processName, JNI_FALSE);
-    setNativeSandboxEnvironment(package_name, process_name);
+    const char *host_package = hostPackageName == nullptr ? nullptr : env->GetStringUTFChars(hostPackageName, JNI_FALSE);
+    setNativeSandboxEnvironment(package_name, process_name, host_package);
+    if (host_package != nullptr) {
+        env->ReleaseStringUTFChars(hostPackageName, host_package);
+    }
     if (process_name != nullptr) {
         env->ReleaseStringUTFChars(processName, process_name);
     }
@@ -629,7 +636,7 @@ static JNINativeMethod gMethods[] = {
         {"installRawSyscallEnvironmentProbe", "()V",                       (void *) installRawSyscallEnvironmentProbe},
         {"installRawSyscallTerminationProbe", "()V",                       (void *) installRawSyscallTerminationProbe},
         {"setVirtualUid",       "(I)V",                                    (void *) setVirtualUid},
-        {"setNativeSandboxEnvironment", "(Ljava/lang/String;Ljava/lang/String;)V", (void *) configureNativeSandboxEnvironmentWithProcess},
+        {"setNativeSandboxEnvironment", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", (void *) configureNativeSandboxEnvironmentWithProcess},
         {"setNativeSandboxEnvironmentPackage", "(Ljava/lang/String;)V",    (void *) configureNativeSandboxEnvironment},
         {"setNativeTerminationShieldPackage", "(Ljava/lang/String;)V",     (void *) configureNativeTerminationShield},
         {"disableEarlyProcMapsShim", "()V",                                (void *) disableNativeEarlyProcMapsShim},

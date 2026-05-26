@@ -79,7 +79,7 @@ public class BActivityThreadAppComponentFactorySourceTest {
 
         int nativeInit = source.indexOf("NativeCore.init(Build.VERSION.SDK_INT)");
         int setVirtualUid = source.indexOf("NativeCore.setVirtualUid(BActivityThread.getBUid())", nativeInit);
-        int sandboxEnvironment = source.indexOf("NativeCore.setNativeSandboxEnvironment(packageName, processName)", nativeInit);
+        int sandboxEnvironment = source.indexOf("NativeCore.setNativeSandboxEnvironment(packageName, processName, BlackBoxCore.getHostPkg())", nativeInit);
 
         assertTrue("BActivityThread should initialize NativeCore first", nativeInit >= 0);
         assertTrue("BActivityThread should pass the virtual uid to native code before package-scoped native environment virtualization is configured",

@@ -19,9 +19,14 @@ class OmmiBlackBoxLoader {
                     override fun isHideRoot(): Boolean = false
                     override fun isHideXposed(): Boolean = false
                     override fun isEnableDaemonService(): Boolean = false
-                    override fun isEnableLauncherActivity(): Boolean = true
-                    override fun isEnableDiagnosticLogcat(): Boolean = false
-                    override fun isEnableDexDump(): Boolean = false
+                    override fun isEnableDiagnosticLogcat(): Boolean {
+                        return BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+                    }
+
+                    override fun isEnableDexDump(): Boolean {
+                        return BuildConfig.BLACKBOX_DEX_DUMP_ENABLED
+                    }
+
                     override fun requestInstallPackage(file: File?, userId: Int): Boolean = false
                 },
             )

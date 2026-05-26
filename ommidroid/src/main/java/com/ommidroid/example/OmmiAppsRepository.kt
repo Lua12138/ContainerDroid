@@ -13,28 +13,18 @@ import java.net.URL
 
 class OmmiAppsRepository {
     fun loadInstalledApps(userId: Int): Result<List<VirtualAppItem>> = runCatching {
-        val runningPackages = linkedSetOf<String>()
-        val callerPackage = OmmiApplication.getContext().packageName
-
-        runCatching {
-            BlackBoxCore.getBActivityManager().getRunningAppProcesses(callerPackage, userId)
-        }.getOrNull()?.mAppProcessInfoList.orEmpty().forEach { process ->
-            process.pkgList?.forEach { packageName ->
-                if (!packageName.isNullOrBlank()) {
-                    runningPackages += packageName
-                }
-            }
-        }
-
-        runCatching {
-            BlackBoxCore.getBActivityManager().getRunningServices(callerPackage, userId)
-        }.getOrNull()?.mRunningServiceInfoList.orEmpty().forEach { service ->
-            service.service?.packageName?.takeIf { it.isNotBlank() }?.let(runningPackages::add)
-        }
-
-        BlackBoxCore.get()
+        val installedApplications = BlackBoxCore.get()
             .getInstalledApplications(0, userId)
             .orEmpty()
+
+        val runningPackages = collectRunningPackages(
+            installedApplications.mapNotNull { applicationInfo ->
+                applicationInfo.packageName?.takeIf { it.isNotBlank() }
+            },
+            userId,
+        )
+
+        installedApplications
             .map { it.toVirtualAppItem(runningPackages) }
             .sortedBy { it.name.lowercase() }
     }
@@ -106,6 +96,41 @@ class OmmiAppsRepository {
 
     fun stop(packageName: String, userId: Int): Result<Unit> = runCatching {
         BlackBoxCore.get().stopPackage(packageName, userId)
+    }
+
+    private fun collectRunningPackages(packageNames: List<String>, userId: Int): Set<String> {
+        val runningPackages = linkedSetOf<String>()
+        for (packageName in packageNames) {
+            collectRunningProcesses(packageName, userId, runningPackages)
+            collectRunningServices(packageName, userId, runningPackages)
+        }
+        return runningPackages
+    }
+
+    private fun collectRunningProcesses(
+        packageName: String,
+        userId: Int,
+        runningPackages: MutableSet<String>,
+    ) {
+        runCatching {
+            BlackBoxCore.getBActivityManager().getRunningAppProcesses(packageName, userId)
+        }.getOrNull()?.mAppProcessInfoList.orEmpty().forEach { process ->
+            process.pkgList?.forEach { runningPackageName ->
+                runningPackageName?.takeIf { it.isNotBlank() }?.let(runningPackages::add)
+            }
+        }
+    }
+
+    private fun collectRunningServices(
+        packageName: String,
+        userId: Int,
+        runningPackages: MutableSet<String>,
+    ) {
+        runCatching {
+            BlackBoxCore.getBActivityManager().getRunningServices(packageName, userId)
+        }.getOrNull()?.mRunningServiceInfoList.orEmpty().forEach { service ->
+            service.service?.packageName?.takeIf { it.isNotBlank() }?.let(runningPackages::add)
+        }
     }
 
     private fun ApplicationInfo.toVirtualAppItem(runningPackages: Set<String>): VirtualAppItem {

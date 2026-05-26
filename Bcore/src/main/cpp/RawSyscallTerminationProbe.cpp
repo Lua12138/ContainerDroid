@@ -71,6 +71,7 @@ static pthread_mutex_t gPatchRegistryLock = PTHREAD_MUTEX_INITIALIZER;
 static struct sigaction gPreviousTrapAction = {};
 static bool gHasPreviousTrapAction = false;
 static pid_t gRootPid = -1;
+static char gHostPackage[kMaxPath] = {};
 static constexpr size_t kTrapAltStackSize = 64 * 1024;
 static __thread bool gThreadTrapAltStackInstalled = false;
 static __thread void *gThreadTrapAltStack = nullptr;
@@ -693,6 +694,12 @@ static int protFromPerms(const char *perms) {
 
 static bool isPatchableAnonymousExecutableMap(const char *path);
 
+static bool isHostPackagePath(const char *path) {
+    return path != nullptr
+           && gHostPackage[0] != '\0'
+           && strstr(path, gHostPackage) != nullptr;
+}
+
 static bool shouldScanPath(const char *path, bool include_file_backed_app_code) {
     if (path == nullptr || path[0] == '\0') {
         return false;
@@ -706,7 +713,7 @@ static bool shouldScanPath(const char *path, bool include_file_backed_app_code) 
         || strstr(path, "libblackbox.so") != nullptr
         || strstr(path, "libpine.so") != nullptr
         || strstr(path, "libblackhook.so") != nullptr
-        || strstr(path, "/top.niunaijun.blackboxa32-") != nullptr) {
+        || isHostPackagePath(path)) {
         return false;
     }
     if (isPatchableAnonymousExecutableMap(path)) {
@@ -961,6 +968,14 @@ static bool ensureRawSyscallProbeInstalled() {
 
 void setRawSyscallTerminationBlocking(bool enabled) {
     gBlockTerminationSyscalls.store(enabled);
+}
+
+void setHostPackage(const char *host_package) {
+    if (host_package == nullptr || host_package[0] == '\0') {
+        gHostPackage[0] = '\0';
+        return;
+    }
+    snprintf(gHostPackage, sizeof(gHostPackage), "%s", host_package);
 }
 
 void installRawSyscallEnvironmentProbe() {

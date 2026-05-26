@@ -79,7 +79,7 @@ public class NativeCore {
 
     public static native void setVirtualUid(int virtualUid);
 
-    public static native void setNativeSandboxEnvironment(String packageName, String processName);
+    public static native void setNativeSandboxEnvironment(String packageName, String processName, String hostPackageName);
 
     public static native void setNativeSandboxEnvironmentPackage(String packageName);
 

@@ -67,14 +67,14 @@ public class RuntimeHookSourceTest {
         assertTrue("Maps shim should classify sandbox runtime mappings",
                 source.contains("shouldHideMapsLine"));
         assertTrue("Maps shim should drop host APK/dex mappings after package-name rewriting",
-                source.contains("contains(line, kHostPackage)"));
+                source.contains("contains(line, context.host_package)"));
         assertTrue("Maps shim should drop Pine native hook mappings",
                 source.contains("libpine.so")
                         && source.contains("[anon:pine codes]"));
         assertTrue("Maps shim should preserve app-private mappings long enough to rewrite them",
                 source.contains("shouldHideRawMapsLine(line, context)")
                         && source.contains("std::string sanitized = sanitizeMapsLine(line, context)")
-                        && source.contains("if (shouldHideMapsLine(sanitized.c_str()))")
+                        && source.contains("if (shouldHideMapsLine(sanitized.c_str(), context))")
                         && source.contains("continue;"));
     }
 
@@ -85,7 +85,7 @@ public class RuntimeHookSourceTest {
                 "Bcore/src/main/cpp/Hook/RuntimeHook.cpp");
 
         int sanitize = source.indexOf("std::string sanitized = sanitizeMapsLine(line, context)");
-        int hide = source.indexOf("shouldHideMapsLine(sanitized.c_str())");
+        int hide = source.indexOf("shouldHideMapsLine(sanitized.c_str(), context)");
 
         assertTrue("Maps shim should rewrite the protected library path before applying final hide rules",
                 sanitize >= 0 && hide > sanitize);
@@ -109,7 +109,7 @@ public class RuntimeHookSourceTest {
                 source.contains("replaceAll(&sanitized, context.virtual_data_root, context.public_data_root)")
                         && source.contains("replaceAll(&sanitized, context.data_data_virtual_root, context.public_data_root)"));
         assertTrue("Raw host-package filtering must preserve app-private aliases long enough for path rewriting",
-                source.contains("return !isVirtualAppDataLine(line, context) && shouldHideMapsLine(line);"));
+                source.contains("return !isVirtualAppDataLine(line, context) && shouldHideMapsLine(line, context);"));
     }
 
     @Test

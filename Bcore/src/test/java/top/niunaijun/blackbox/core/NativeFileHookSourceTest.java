@@ -537,10 +537,11 @@ public class NativeFileHookSourceTest {
 
         assertTrue("Native status virtualization must know the virtual process name, not only the package name, so /proc/self/status Name no longer exposes top.niunaijun.blackbox*:pN.",
                 nativeFileHook.contains("gNativeSandboxProcessName")
-                        && nativeFileHook.contains("setNativeSandboxEnvironment(const char *package_name, const char *process_name)")
-                        && nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName)")
-                        && boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;)V\"")
-                        && activityThread.contains("NativeCore.setNativeSandboxEnvironment(packageName, processName);"));
+                        && nativeFileHook.contains("setNativeSandboxEnvironment(const char *package_name,")
+                        && nativeFileHook.contains("const char *host_package)")
+                        && nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName, String hostPackageName)")
+                        && boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V\"")
+                        && activityThread.contains("NativeCore.setNativeSandboxEnvironment(packageName, processName, BlackBoxCore.getHostPkg());"));
         assertTrue("The status Name field should be rewritten to Android's task-comm-sized virtual process suffix, preserving real procfs formatting while hiding the host p0 stub.",
                 nativeFileHook.contains("linuxTaskCommForProcessName")
                         && statusRewrite.contains("strncmp(line, \"Name:\", 5) == 0")
@@ -969,7 +970,7 @@ public class NativeFileHookSourceTest {
 
         int sanitizer = source.indexOf("std::string sanitizeEarlyMapsLine");
         int virtualRootRewrite = source.indexOf("replaceBlackBoxDataUserRoots(&sanitized)", sanitizer);
-        int hostRewrite = source.indexOf("replaceAll(&sanitized, kBlackBoxHostPackagePrefix", sanitizer);
+        int hostRewrite = source.indexOf("replaceAll(&sanitized, gNativeHostPackage", sanitizer);
         int writer = source.indexOf("bool writeEarlyProcMapsFile");
         int rawFilter = source.indexOf("shouldHideEarlyRawMapsLine(line)", writer);
 
@@ -2073,13 +2074,13 @@ public class NativeFileHookSourceTest {
                 "Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java");
 
         assertTrue("NativeCore should expose process-aware native environment virtualization separately from termination shielding",
-                nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName)")
+                nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName, String hostPackageName)")
                         && nativeCore.contains("native void setNativeSandboxEnvironmentPackage(String packageName)"));
         assertTrue("NativeCore should keep the package-scoped native termination shield only as an explicit diagnostic",
                 nativeCore.contains("native void setNativeTerminationShieldPackage(String packageName)"));
         assertTrue("BoxCore should register the native sandbox environment JNI bridge",
-                boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;)V\"")
-                        && boxCore.contains("setNativeSandboxEnvironment(package_name, process_name)")
+                boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V\"")
+                        && boxCore.contains("setNativeSandboxEnvironment(package_name, process_name, host_package)")
                         && boxCore.contains("{\"setNativeSandboxEnvironmentPackage\",")
                         && boxCore.contains("setNativeSandboxEnvironmentPackage(package_name)"));
         assertTrue("BoxCore should keep the native termination shield JNI bridge for explicit diagnostics",
@@ -2087,7 +2088,7 @@ public class NativeFileHookSourceTest {
                         && boxCore.contains("setNativeTerminationShieldPackage(package_name)"));
 
         int enableRedirect = activityThread.indexOf("IOCore.get().enableRedirect(packageContext)");
-        int setEnvironment = activityThread.indexOf("NativeCore.setNativeSandboxEnvironment(packageName, processName)");
+        int setEnvironment = activityThread.indexOf("NativeCore.setNativeSandboxEnvironment(packageName, processName, BlackBoxCore.getHostPkg())");
         int setShield = activityThread.indexOf("NativeCore.setNativeTerminationShieldPackage(packageName)");
         int makeApplication = activityThread.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
         int diagnosticGate = activityThread.indexOf("isNativeTerminationShieldDiagnosticEnabled()");

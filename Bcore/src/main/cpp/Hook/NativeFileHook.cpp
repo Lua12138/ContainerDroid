@@ -151,6 +151,7 @@ Fstat64Fn gOrigFstat64 = nullptr;
 __thread char gSanitizedDladdrPath[PATH_MAX];
 char gNativeTerminationShieldPackage[128] = {};
 char gNativeSandboxProcessName[128] = {};
+char gNativeHostPackage[128] = {};
 bool gNativeTerminationBlockingEnabled = false;
 pid_t gNativeTerminationShieldRootPid = 0;
 pid_t gNativeTerminationShieldRootPgid = 0;
@@ -211,7 +212,6 @@ static const char *kProcCmdlineFdPath = "/dev/fd/91";
 static const char *kProcMeminfoFdPath = "/dev/fd/92";
 static const char *kProcMapsFdPath = "/dev/fd/93";
 static const char *kProcVersionFdPath = "/dev/fd/94";
-static const char *kBlackBoxHostPackagePrefix = "top.niunaijun.blackbox";
 static const char *kProcShimProperty = "debug.blackbox.proc_shim";
 static const char *kProcMapsPathSanitizeProperty = "debug.blackbox.maps_path_sanitize";
 static const char *kTransientProcMapsProperty = "debug.blackbox.transient_maps";
@@ -556,6 +556,14 @@ bool needsModeArg(int flags) {
 
 bool containsPathPart(const char *path, const char *needle) {
     return path != nullptr && needle != nullptr && strstr(path, needle) != nullptr;
+}
+
+bool hasNativeHostPackage() {
+    return gNativeHostPackage[0] != '\0';
+}
+
+bool isNativeHostPackagePath(const char *path) {
+    return hasNativeHostPackage() && containsPathPart(path, gNativeHostPackage);
 }
 
 bool endsWithPathPart(const char *path, const char *suffix) {
@@ -3298,7 +3306,7 @@ void replaceFirstNumericToken(std::string *value, const char *prefix, int replac
 }
 
 bool shouldHideEarlyMapsLine(const char *line) {
-    return containsPathPart(line, kBlackBoxHostPackagePrefix)
+    return isNativeHostPackagePath(line)
            || containsPathPart(line, "libblackbox.so")
            || containsPathPart(line, "libblackhook.so")
            || containsPathPart(line, "libblackdex.so")
@@ -3369,7 +3377,7 @@ bool isFrameworkOrHookNativeCallerPath(const char *path) {
         || containsPathPart(path, "libpine.so")) {
         return true;
     }
-    return containsPathPart(path, kBlackBoxHostPackagePrefix)
+    return isNativeHostPackagePath(path)
            && !containsPathPart(path, "/blackbox/data/user/");
 }
 
@@ -3640,8 +3648,8 @@ std::string sanitizeEarlyMapsLine(const char *line) {
 std::string sanitizeEarlyMapsLineForPackage(const char *line, const char *package_name) {
     std::string sanitized(line == nullptr ? "" : line);
     replaceBlackBoxDataUserRoots(&sanitized);
-    if (package_name != nullptr && package_name[0] != '\0') {
-        replaceAll(&sanitized, kBlackBoxHostPackagePrefix, package_name);
+    if (package_name != nullptr && package_name[0] != '\0' && hasNativeHostPackage()) {
+        replaceAll(&sanitized, gNativeHostPackage, package_name);
     }
     replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
     replaceAll(&sanitized, "/blackbox/", "/data/");
@@ -4155,17 +4163,20 @@ extern "C" void setNativeFileVirtualUid(int virtual_uid) {
     gNativeVirtualUid = virtual_uid;
 }
 
-void setNativeSandboxEnvironmentInternal(const char *package_name, const char *process_name) {
+void setNativeSandboxEnvironmentInternal(const char *package_name, const char *process_name,
+                                         const char *host_package) {
     invalidateMemoryMapEntryCache();
     if (package_name == nullptr || package_name[0] == '\0') {
         resetEarlyProcMapsShim();
         gNativeSandboxProcessName[0] = '\0';
+        gNativeHostPackage[0] = '\0';
         gAppNativeLoaderMapsTrustUntilNs = 0;
         gNativeTerminationShieldPackage[0] = '\0';
         gNativeTerminationBlockingEnabled = false;
         gNativeTerminationShieldRootPid = 0;
         gNativeTerminationShieldRootPgid = 0;
         blackbox::rawsyscall::setRawSyscallTerminationBlocking(false);
+        blackbox::rawsyscall::setHostPackage(nullptr);
         return;
     }
     gAppNativeLoaderMapsTrustUntilNs = 0;
@@ -4174,6 +4185,13 @@ void setNativeSandboxEnvironmentInternal(const char *package_name, const char *p
              sizeof(gNativeSandboxProcessName),
              "%s",
              process_name == nullptr || process_name[0] == '\0' ? package_name : process_name);
+    if (host_package != nullptr) {
+        snprintf(gNativeHostPackage,
+                 sizeof(gNativeHostPackage),
+                 "%s",
+                 host_package[0] == '\0' ? "" : host_package);
+    }
+    blackbox::rawsyscall::setHostPackage(gNativeHostPackage);
     gNativeTerminationBlockingEnabled = false;
     installDirectLibcProcMapsHooks();
     installDirectLibcMetadataHooks();
@@ -4193,23 +4211,29 @@ void setNativeSandboxEnvironmentInternal(const char *package_name, const char *p
     gNativeTerminationShieldRootPgid = getpgrp();
 }
 
-extern "C" void setNativeSandboxEnvironment(const char *package_name, const char *process_name) {
-    setNativeSandboxEnvironmentInternal(package_name, process_name);
+extern "C" const char *currentNativeHostPackage() {
+    return gNativeHostPackage;
+}
+
+extern "C" void setNativeSandboxEnvironment(const char *package_name,
+                                            const char *process_name,
+                                            const char *host_package) {
+    setNativeSandboxEnvironmentInternal(package_name, process_name, host_package);
 }
 
 extern "C" void setNativeSandboxEnvironmentPackage(const char *package_name) {
-    setNativeSandboxEnvironmentInternal(package_name, package_name);
+    setNativeSandboxEnvironmentInternal(package_name, package_name, nullptr);
 }
 
 extern "C" void setNativeTerminationShieldPackage(const char *package_name) {
     if (package_name == nullptr || package_name[0] == '\0') {
-        setNativeSandboxEnvironmentInternal(package_name, nullptr);
+        setNativeSandboxEnvironmentInternal(package_name, nullptr, nullptr);
         return;
     }
     const char *process_name = gNativeSandboxProcessName[0] == '\0'
                                ? package_name
                                : gNativeSandboxProcessName;
-    setNativeSandboxEnvironmentInternal(package_name, process_name);
+    setNativeSandboxEnvironmentInternal(package_name, process_name, nullptr);
     gNativeTerminationBlockingEnabled = true;
     installDirectLibcTerminationHooks();
     blackbox::rawsyscall::installRawSyscallTerminationProbe();

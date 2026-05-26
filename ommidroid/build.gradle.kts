@@ -1,10 +1,29 @@
+import org.gradle.api.Project
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     //kotlin("android")
 }
 
+fun Project.blackBoxBooleanOption(name: String, defaultValue: Boolean): Boolean {
+    val rawValue = findProperty(name)
+        ?: rootProject.findProperty(name)
+        ?: rootProject.extra.takeIf { it.has(name) }?.get(name)
+    return rawValue?.toString()?.toBlackBoxBoolean() ?: defaultValue
+}
+
+fun String.toBlackBoxBoolean(): Boolean {
+    return equals("true", ignoreCase = true) || equals("y", ignoreCase = true) || this == "1"
+}
+
 val releaseKeystoreFile = file("keystore.jks")
+val blackboxDiagnosticLogcatEnabledValue =
+    blackBoxBooleanOption("blackboxDiagnosticLogcatEnabled", true)
+val blackboxDexDumpEnabledValue =
+    blackBoxBooleanOption("blackboxDexDumpEnabled", true)
+val blackboxDebuggableEnabledValue =
+    blackBoxBooleanOption("blackboxDebuggableEnabled", blackboxDiagnosticLogcatEnabledValue)
 
 android {
     namespace = "com.ommidroid.example"
@@ -16,7 +35,7 @@ android {
     defaultConfig {
         applicationId = "com.ommidroid.example"
         minSdk = 21
-        targetSdk = 35
+        targetSdk = rootProject.extra["targetSdkVersion"] as Int
         versionCode = 1
         versionName = "1.0"
 
@@ -25,6 +44,16 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField(
+            "boolean",
+            "BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED",
+            blackboxDiagnosticLogcatEnabledValue.toString(),
+        )
+        buildConfigField(
+            "boolean",
+            "BLACKBOX_DEX_DUMP_ENABLED",
+            blackboxDexDumpEnabledValue.toString(),
+        )
     }
     signingConfigs {
         if (releaseKeystoreFile.isFile) {
@@ -38,6 +67,8 @@ android {
     }
     buildTypes {
         debug {
+            isDebuggable = blackboxDebuggableEnabledValue
+            isJniDebuggable = blackboxDebuggableEnabledValue
             signingConfig = if (releaseKeystoreFile.isFile) {
                 signingConfigs["release"]
             } else {
@@ -60,14 +91,15 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "21"
+        jvmTarget = "17"
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

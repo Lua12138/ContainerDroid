@@ -213,8 +213,9 @@ public class IOCore {
 
     private String sanitizeProcMapsLine(String line, String packageName) {
         String sanitized = replaceBlackBoxDataUserRoots(line);
-        if (!TextUtils.isEmpty(packageName)) {
-            sanitized = sanitized.replace("top.niunaijun.blackbox", packageName);
+        String hostPackageName = BlackBoxCore.getHostPkg();
+        if (!TextUtils.isEmpty(packageName) && !TextUtils.isEmpty(hostPackageName)) {
+            sanitized = sanitized.replace(hostPackageName, packageName);
         }
         sanitized = sanitized.replace("/blackbox/data/user/", "/data/user/");
         sanitized = sanitized.replace("/blackbox/", "/data/");
@@ -250,7 +251,8 @@ public class IOCore {
         if (line.contains("/blackbox/data/user/")) {
             return false;
         }
-        return line.contains("top.niunaijun.blackbox")
+        String hostPackageName = BlackBoxCore.getHostPkg();
+        return (!TextUtils.isEmpty(hostPackageName) && line.contains(hostPackageName))
                 || line.contains("libblackbox")
                 || line.contains("libblackhook")
                 || line.contains("libblackdex")

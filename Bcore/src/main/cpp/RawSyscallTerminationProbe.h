@@ -8,6 +8,7 @@ void installRawSyscallEnvironmentProbe();
 void installRawSyscallTerminationProbe();
 void refreshRawSyscallProbeMaps();
 void setRawSyscallTerminationBlocking(bool enabled);
+void setHostPackage(const char *host_package);
 
 }
 }

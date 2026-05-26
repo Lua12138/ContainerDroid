@@ -135,8 +135,6 @@ class OmmiAppsViewModel(
                 .onSuccess { launched ->
                     if (!launched && uiState.value.pendingPermissionPackage == null) {
                         uiState.value = uiState.value.copy(message = string(R.string.launch_failed_message))
-                    } else if (launched) {
-                        loadApps()
                     }
                 }
                 .onFailure { throwable ->

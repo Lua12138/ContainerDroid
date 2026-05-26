@@ -24,6 +24,7 @@
 
 extern "C" void installNativeFileHooks();
 extern "C" void refreshProtectedProcMapsShim();
+extern "C" const char *currentNativeHostPackage();
 
 namespace {
 
@@ -49,8 +50,6 @@ constexpr const char *kFakeProcVersion =
         "(android-build@localhost) #1 SMP PREEMPT\n";
 
 constexpr const char *kBlackBoxUserMarker = "/blackbox/data/user/";
-constexpr const char *kHostPackage = "top.niunaijun.blackboxa32";
-constexpr const char *kBlackBoxHostPackagePrefix = "top.niunaijun.blackbox";
 constexpr const char *kProcShimProperty = "debug.blackbox.proc_shim";
 
 struct ProcShimContext {
@@ -82,7 +81,7 @@ __thread bool gRefreshingProcMapsShim = false;
 pthread_mutex_t gProcMapsRefreshMutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool contains(const char *value, const char *needle) {
-    return value != nullptr && needle != nullptr && strstr(value, needle) != nullptr;
+    return value != nullptr && needle != nullptr && needle[0] != '\0' && strstr(value, needle) != nullptr;
 }
 
 bool isProcShimEnabled() {
@@ -211,7 +210,10 @@ bool buildProcShimContext(const char *library_path, ProcShimContext *context) {
                            host_start, marker)) {
         // parsed from the path
     } else {
-        snprintf(context->host_package, sizeof(context->host_package), "%s", kHostPackage);
+        const char *configured_host = currentNativeHostPackage();
+        if (configured_host != nullptr && configured_host[0] != '\0') {
+            snprintf(context->host_package, sizeof(context->host_package), "%s", configured_host);
+        }
     }
     snprintf(context->host_user_id, sizeof(context->host_user_id), "0");
     constexpr const char *data_user_prefix = "/data/user/";
@@ -284,17 +286,14 @@ std::string sanitizeMapsLine(const char *line, const ProcShimContext &context) {
     replaceAll(&sanitized, context.data_user_virtual_root, context.public_data_root);
     replaceAll(&sanitized, context.data_data_virtual_root, context.public_data_root);
     replaceAll(&sanitized, context.host_package, context.package_name);
-    replaceAll(&sanitized, kHostPackage, context.package_name);
-    replaceAll(&sanitized, kBlackBoxHostPackagePrefix, context.package_name);
     replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
     replaceAll(&sanitized, "/blackbox/", "/data/");
     replaceAll(&sanitized, "libblackbox.so", "libandroid_runtime.so");
     return sanitized;
 }
 
-bool shouldHideMapsLine(const char *line) {
-    return contains(line, kHostPackage)
-           || contains(line, kBlackBoxHostPackagePrefix)
+bool shouldHideMapsLine(const char *line, const ProcShimContext &context) {
+    return contains(line, context.host_package)
            || contains(line, "libblackbox.so")
            || contains(line, "libblackhook.so")
            || contains(line, "libblackdex.so")
@@ -310,7 +309,7 @@ bool isVirtualAppDataLine(const char *line, const ProcShimContext &context) {
 }
 
 bool shouldHideRawMapsLine(const char *line, const ProcShimContext &context) {
-    return !isVirtualAppDataLine(line, context) && shouldHideMapsLine(line);
+    return !isVirtualAppDataLine(line, context) && shouldHideMapsLine(line, context);
 }
 
 bool copyRealFileToFd(const char *path, int fd) {
@@ -404,7 +403,7 @@ bool writeFakeMapsFile(int fd, const ProcShimContext &context) {
             continue;
         }
         std::string sanitized = sanitizeMapsLine(line, context);
-        if (shouldHideMapsLine(sanitized.c_str())) {
+        if (shouldHideMapsLine(sanitized.c_str(), context)) {
             continue;
         }
         if (!writeExact(fd, sanitized.data(), sanitized.size())) {
