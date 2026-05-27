@@ -28,6 +28,10 @@ set(SRC3
         Hook/VMClassLoaderHook.cpp)
 aux_source_directory(JniHook SRC4)
 add_compile_options(-w)
+if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Hook/NativeFileHook.cpp PROPERTIES
+                COMPILE_FLAGS "-O1 -fno-omit-frame-pointer")
+endif ()
 add_library( # Sets the name of the library.
         blackbox
         # Sets the library as a shared library.

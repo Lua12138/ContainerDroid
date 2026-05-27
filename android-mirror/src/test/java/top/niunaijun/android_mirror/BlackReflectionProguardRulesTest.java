@@ -20,6 +20,13 @@ public class BlackReflectionProguardRulesTest {
         assertTrue("BlackReflection reads runtime class and parameter annotations",
                 consumerRules.contains("-keepattributes")
                         && consumerRules.contains("*Annotation*"));
+        assertTrue("BlackReflection runtime must not be optimized away because it interprets generated mirror annotations dynamically",
+                consumerRules.contains("-keep class top.niunaijun.blackreflection.BlackReflection { *; }")
+                        && consumerRules.contains("-keep class top.niunaijun.blackreflection.BlackReflection$* { *; }"));
+        assertTrue("BlackReflection annotation types are part of the generated mirror runtime contract",
+                consumerRules.contains("-keep class top.niunaijun.blackreflection.annotation.** { *; }"));
+        assertTrue("BlackReflection utility methods are called by generated BR* classes and by the invocation handler",
+                consumerRules.contains("-keep class top.niunaijun.blackreflection.utils.** { *; }"));
     }
 
     private static String readSource(String rootRelativePath) throws Exception {

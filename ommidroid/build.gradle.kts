@@ -3,7 +3,6 @@ import org.gradle.api.Project
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    //kotlin("android")
 }
 
 fun Project.blackBoxBooleanOption(name: String, defaultValue: Boolean): Boolean {
@@ -19,11 +18,15 @@ fun String.toBlackBoxBoolean(): Boolean {
 
 val releaseKeystoreFile = file("keystore.jks")
 val blackboxDiagnosticLogcatEnabledValue =
-    blackBoxBooleanOption("blackboxDiagnosticLogcatEnabled", true)
+    blackBoxBooleanOption("blackboxDiagnosticLogcatEnabled", false)
 val blackboxDexDumpEnabledValue =
-    blackBoxBooleanOption("blackboxDexDumpEnabled", true)
+    blackBoxBooleanOption("blackboxDexDumpEnabled", false)
 val blackboxDebuggableEnabledValue =
     blackBoxBooleanOption("blackboxDebuggableEnabled", blackboxDiagnosticLogcatEnabledValue)
+val ommidroidReleaseMinifyEnabledValue =
+    blackBoxBooleanOption("blackboxOmmidroidReleaseMinifyEnabled", true)
+val ommidroidReleaseShrinkResourcesEnabledValue =
+    blackBoxBooleanOption("blackboxOmmidroidReleaseShrinkResourcesEnabled", ommidroidReleaseMinifyEnabledValue)
 
 android {
     namespace = "com.ommidroid.example"
@@ -76,8 +79,8 @@ android {
             }
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = ommidroidReleaseMinifyEnabledValue
+            isShrinkResources = ommidroidReleaseMinifyEnabledValue && ommidroidReleaseShrinkResourcesEnabledValue
             signingConfig = if (releaseKeystoreFile.isFile) {
                 signingConfigs["release"]
             } else {

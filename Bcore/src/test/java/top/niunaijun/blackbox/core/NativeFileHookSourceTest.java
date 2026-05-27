@@ -177,6 +177,53 @@ public class NativeFileHookSourceTest {
     }
 
     @Test
+    public void armRawKernelSyscallPreservesR7FramePointerRegister() throws Exception {
+        assertArmRawSyscallPreservesR7(
+                "src/main/cpp/Hook/NativeFileHook.cpp",
+                "Bcore/src/main/cpp/Hook/NativeFileHook.cpp",
+                "#if defined(__arm__)",
+                "#elif defined(__aarch64__)");
+        assertArmRawSyscallPreservesR7(
+                "src/main/cpp/RawSyscallTerminationProbe.cpp",
+                "Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp",
+                "static long rawKernelSyscall6(long sysno",
+                "static long emulateRawSyscall");
+    }
+
+    private static void assertArmRawSyscallPreservesR7(
+            String primaryPath,
+            String fallbackPath,
+            String startMarker,
+            String endMarker) throws Exception {
+        String source = readSource(primaryPath, fallbackPath);
+        String armSyscall = sliceBetween(source, startMarker, endMarker);
+
+        assertFalse("ARM/Thumb release builds may use r7 as the frame pointer; raw syscall code must not bind a C register variable to r7 and let it leak into the caller frame",
+                armSyscall.contains("register long r7 __asm__(\"r7\")"));
+        assertTrue("ARM raw syscall code must save r7 before loading the syscall number",
+                armSyscall.contains("push {r7}"));
+        assertTrue("ARM raw syscall code must restore r7 before returning to compiler-generated frame/canary code",
+                armSyscall.contains("pop {r7}"));
+        assertTrue("ARM raw syscall code should load the syscall number into r7 only inside the balanced asm block",
+                armSyscall.contains("mov r7,"));
+    }
+
+    @Test
+    public void rawSyscallTrapPathAvoidsEmulatedThreadLocalStorage() throws Exception {
+        String source = readSource(
+                "src/main/cpp/RawSyscallTerminationProbe.cpp",
+                "Bcore/src/main/cpp/RawSyscallTerminationProbe.cpp");
+
+        assertFalse("SIGTRAP/raw-syscall handling runs on protected app pthreads; __thread uses ARM emutls and can allocate/free from signal-adjacent paths, which caused release-only pthread-exit heap crashes",
+                source.contains("__thread"));
+        assertTrue("Raw syscall telemetry should be carried on the handler stack instead of thread-local storage",
+                source.contains("RawSyscallRedirectTelemetry telemetry = {}")
+                        && source.contains("emulateRedirectableRawSyscall(sysno, mc, &telemetry)"));
+        assertTrue("Per-thread alternate signal stack detection should query sigaltstack state instead of thread-local booleans",
+                source.contains("sigaltstack(nullptr, &current_stack)"));
+    }
+
+    @Test
     public void directOpenHooksAvoidCallerMapResolutionForNonVirtualProcReads() throws Exception {
         String source = readSource(
                 "src/main/cpp/Hook/NativeFileHook.cpp",
@@ -262,6 +309,14 @@ public class NativeFileHookSourceTest {
         assertTrue("blackbox shared library should compile NativeFileHook.cpp",
                 cmake.contains("Hook/NativeFileHook.cpp")
                         || cmake.contains("aux_source_directory(Hook SRC3)"));
+        assertTrue("NativeFileHook.cpp's protector-compatible optimization override should be limited to optimized release CMake builds",
+                cmake.contains("CMAKE_BUILD_TYPE STREQUAL \"Release\"")
+                        && cmake.contains("CMAKE_BUILD_TYPE STREQUAL \"RelWithDebInfo\"")
+                        && cmake.contains("set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Hook/NativeFileHook.cpp PROPERTIES")
+                        && cmake.contains("COMPILE_FLAGS \"-O1 -fno-omit-frame-pointer\""));
+        assertFalse("The release-only NativeFileHook.cpp override must not downgrade the entire blackbox library to -O0",
+                cmake.contains("target_compile_options(blackbox PRIVATE -O0")
+                        || cmake.contains("COMPILE_FLAGS \"-O0"));
     }
 
     @Test
@@ -802,7 +857,9 @@ public class NativeFileHookSourceTest {
         assertTrue("Raw SVC open/openat probes bypass libc PLT hooks, so they may call back into proc virtualization before falling through to the kernel.",
                 nativeFileHook.contains("blackbox_open_virtual_proc_fd_for_raw_syscall")
                         && rawProbe.contains("extern \"C\" int blackbox_open_virtual_proc_fd_for_raw_syscall")
-                        && rawRedirect.contains("openVirtualProcFdForRawSyscall(sysno, args,")
+                        && rawRedirect.contains("openVirtualProcFdForRawSyscall(")
+                        && rawRedirect.contains("sysno,")
+                        && rawRedirect.contains("args,")
                         && rawRedirect.contains("if (virtual_proc_fd >= 0)")
                         && rawRedirect.contains("return virtual_proc_fd;"));
         assertTrue("Synthetic raw-SVC proc fds are memfd-backed rather than real procfs fds, so they must stay explicit diagnostic opt-in and default to kernel/IO redirection semantics.",
@@ -833,9 +890,10 @@ public class NativeFileHookSourceTest {
                 "void refreshRawSyscallProbeMaps()",
                 "} // namespace rawsyscall");
 
-        assertTrue("Raw SVC traps run on arbitrary protected app threads; SA_ONSTACK is ineffective unless each thread installs an alternate signal stack before maps are patched.",
-                rawProbe.contains("static __thread bool gThreadTrapAltStackInstalled")
+        assertTrue("Raw SVC traps run on arbitrary protected app threads; SA_ONSTACK is ineffective unless each thread has an alternate signal stack before maps are patched.",
+                rawProbe.contains("currentThreadHasTrapAlternateStack")
                         && rawProbe.contains("ensureCurrentThreadTrapAlternateStack")
+                        && rawProbe.contains("sigaltstack(nullptr, &current_stack)")
                         && rawProbe.contains("sigaltstack(&stack, nullptr)")
                         && rawProbe.contains("kTrapAltStackSize"));
         assertTrue("The first install path must configure the current thread alternate stack before installing the SIGTRAP handler.",

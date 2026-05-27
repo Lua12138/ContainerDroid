@@ -142,9 +142,9 @@ public class RawSyscallTerminationProbeSourceTest {
                         && handler.contains("entry->saw_redirectable_syscall = true")
                         && restorePredicate.contains("!entry->saw_redirectable_syscall"));
         assertTrue("the current trapped syscall should still be emulated before the hot site is restored for later calls",
-                handler.contains("long result = emulateRedirectableRawSyscall(sysno, mc)")
+                handler.contains("long result = emulateRedirectableRawSyscall(sysno, mc, &telemetry)")
                         && handler.contains("const uint32_t count = incrementNonTerminationCount(entry)")
-                        && handler.indexOf("long result = emulateRedirectableRawSyscall(sysno, mc)")
+                        && handler.indexOf("long result = emulateRedirectableRawSyscall(sysno, mc, &telemetry)")
                         < handler.indexOf("restoreHotPassthroughPatch(entry, sysno, count)"));
         assertFalse("hot passthrough restoration must stay generic and sample agnostic",
                 source.contains("com.bestv")
@@ -221,7 +221,7 @@ public class RawSyscallTerminationProbeSourceTest {
                         && source.contains("case __NR_access:")
                         && source.contains("case __NR_faccessat:"));
         assertTrue("raw syscall file emulation must rewrite only the path register and still execute through the private kernel SVC helper",
-                source.contains("emulateRedirectableRawSyscall(sysno, mc)")
+                source.contains("emulateRedirectableRawSyscall(int sysno, const mcontext_t &mc,")
                         && source.contains("rawKernelSyscall6(sysno,")
                         && source.contains("redirected_path != pathname"));
         assertTrue("redirected path buffers allocated by IOCore must be released after the kernel syscall returns",
@@ -250,13 +250,13 @@ public class RawSyscallTerminationProbeSourceTest {
         assertTrue("raw open/access-style SVC telemetry should retain the original path even when IOCore does not rewrite it",
                 telemetry.contains("bool redirectable")
                         && telemetry.contains("char original[kMaxPath]")
-                        && source.contains("copyTelemetryPath(gLastRedirectTelemetry.original"));
+                        && source.contains("copyTelemetryPath(telemetry->original"));
         assertTrue("failed passthrough raw file probes must log the path, result, and IDA file offset so environment predicates can be correlated without blocking the app",
                 handler.contains("raw syscall file passthrough")
                         && handler.contains("path=%s")
                         && handler.contains("result=0x%lx")
                         && handler.contains("pcFileOff=0x%")
-                        && handler.contains("gLastRedirectTelemetry.original"));
+                        && handler.contains("telemetry.original"));
         assertTrue("read/lseek syscall names should be decoded because protected loaders inspect maps/status byte-by-byte through raw SVC stubs",
                 source.contains("case __NR_read:")
                         && source.contains("return \"read\"")
