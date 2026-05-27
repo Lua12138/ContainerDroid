@@ -156,8 +156,8 @@ static int patchLoadedObject(struct dl_phdr_info *info, size_t, void *data) {
         return 0;
     }
     const char *name = info->dlpi_name == nullptr ? "" : info->dlpi_name;
-    if (strstr(name, "libblackbox.so") != nullptr
-            || (spec->skipLibc && strstr(name, "/libc.so") != nullptr)) {
+    if (strstr(name, BB_CORE_STR("libblackbox.so")) != nullptr
+            || (spec->skipLibc && strstr(name, BB_CORE_STR("/libc.so")) != nullptr)) {
         return 0;
     }
 
@@ -804,7 +804,7 @@ static void initBinderMonitorBridge(JNIEnv *env) {
     if (env == nullptr || gBinderMonitorClass != nullptr) {
         return;
     }
-    jclass clazz = env->FindClass("top/niunaijun/blackbox/binder/BlackBoxBinderMonitor");
+    jclass clazz = env->FindClass(BB_CORE_STR("top/niunaijun/blackbox/binder/BlackBoxBinderMonitor"));
     if (clazz == nullptr) {
         env->ExceptionClear();
         return;
@@ -812,20 +812,20 @@ static void initBinderMonitorBridge(JNIEnv *env) {
     gBinderMonitorClass = reinterpret_cast<jclass>(env->NewGlobalRef(clazz));
     env->DeleteLocalRef(clazz);
     gRecordIoctlMethod = env->GetStaticMethodID(gBinderMonitorClass,
-                                                "recordIoctlBinderTransaction",
-                                                "(Ljava/lang/String;IIIZILjava/lang/String;)V");
+                                                BB_CORE_STR("recordIoctlBinderTransaction"),
+                                                BB_CORE_STR("(Ljava/lang/String;IIIZILjava/lang/String;)V"));
     if (gRecordIoctlMethod == nullptr) {
         env->ExceptionClear();
     }
     gRecordIoctlLegacyMethod = env->GetStaticMethodID(gBinderMonitorClass,
-                                                      "recordIoctlBinderTransaction",
-                                                      "(Ljava/lang/String;IIIZ)V");
+                                                      BB_CORE_STR("recordIoctlBinderTransaction"),
+                                                      BB_CORE_STR("(Ljava/lang/String;IIIZ)V"));
     if (gRecordIoctlLegacyMethod == nullptr) {
         env->ExceptionClear();
     }
     gRecordNativeMethod = env->GetStaticMethodID(gBinderMonitorClass,
-                                                 "recordNativeBinderTransact",
-                                                 "(Ljava/lang/String;IIIZLjava/lang/String;)V");
+                                                 BB_CORE_STR("recordNativeBinderTransact"),
+                                                 BB_CORE_STR("(Ljava/lang/String;IIIZLjava/lang/String;)V"));
     if (gRecordNativeMethod == nullptr) {
         env->ExceptionClear();
     }

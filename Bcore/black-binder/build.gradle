@@ -17,6 +17,7 @@ android {
     namespace 'top.niunaijun.blackbox.binder'
     compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
+    ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
         minSdk 21
@@ -27,6 +28,9 @@ android {
         consumerProguardFiles 'consumer-rules.pro'
         buildConfigField "boolean", "BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED",
                 "${blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)}"
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
 
     buildTypes {

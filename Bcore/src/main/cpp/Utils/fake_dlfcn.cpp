@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "fake_dlfcn.h"
+#include "XorString.h"
 
 #ifdef __arm__
 #define Elf_Ehdr Elf32_Ehdr
@@ -52,7 +53,7 @@ void *fake_dlopen(const char *libpath, int flags) {
     Elf_Ehdr *elf = (Elf_Ehdr *) MAP_FAILED;
 
 
-    maps = fopen("/proc/self/maps", "r");
+    maps = fopen(BB_CORE_STR("/proc/self/maps"), BB_CORE_STR("r"));
     if (!maps) goto err_exit;
 
     while (!found && fgets(buff, sizeof(buff), maps))

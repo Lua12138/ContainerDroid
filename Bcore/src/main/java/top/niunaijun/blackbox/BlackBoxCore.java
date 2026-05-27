@@ -126,7 +126,6 @@ public class BlackBoxCore extends ClientConfiguration {
         sContext = context;
         mClientConfiguration = clientConfiguration;
         initNotificationManager();
-
         String processName = getProcessName(getContext());
         if (processName.equals(BlackBoxCore.getHostPkg())) {
             mProcessType = ProcessType.Main;

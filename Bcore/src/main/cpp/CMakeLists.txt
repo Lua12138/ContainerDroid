@@ -4,9 +4,30 @@
 # Sets the minimum version of CMake required to build the native library.
 
 cmake_minimum_required(VERSION 3.4.1)
+project(blackbox)
+include(CheckCXXCompilerFlag)
+
+check_cxx_compiler_flag("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." BLACKBOX_HAS_FILE_PREFIX_MAP)
+if (BLACKBOX_HAS_FILE_PREFIX_MAP)
+        set(BLACKBOX_PREFIX_MAP_FLAG "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+else ()
+        set(BLACKBOX_PREFIX_MAP_FLAG "-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=.")
+endif ()
 
 if (NOT DEFINED BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED)
         set(BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED 1)
+endif ()
+
+if (NOT DEFINED BLACKBOX_GUARD_SIGNATURE_SHA256)
+        set(BLACKBOX_GUARD_SIGNATURE_SHA256 "")
+endif ()
+
+if (NOT DEFINED BLACKBOX_GUARD_TRACER_INTERVAL_SECONDS)
+        set(BLACKBOX_GUARD_TRACER_INTERVAL_SECONDS 3)
+endif ()
+
+if (NOT DEFINED BLACKBOX_GUARD_DIAGNOSTIC_ENABLED)
+        set(BLACKBOX_GUARD_DIAGNOSTIC_ENABLED 0)
 endif ()
 
 # Creates and names a library, sets it as either STATIC
@@ -38,6 +59,7 @@ add_library( # Sets the name of the library.
         SHARED
         # Provides a relative path to your source file(s).
         BoxCore.cpp
+        HostGuard.cpp
         SeccompShield.cpp
         RawSyscallTerminationProbe.cpp
         ${SRC1}
@@ -46,7 +68,19 @@ add_library( # Sets the name of the library.
         ${SRC4}
         )
 
-target_compile_definitions(blackbox PRIVATE BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED})
+target_compile_options(blackbox PRIVATE
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden
+        ${BLACKBOX_PREFIX_MAP_FLAG})
+
+set_target_properties(blackbox PROPERTIES
+        LINK_FLAGS "-Wl,--strip-all -Wl,--exclude-libs,ALL -Wl,-soname,libblackbox.so")
+
+target_compile_definitions(blackbox PRIVATE
+        BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED}
+        BLACKBOX_GUARD_SIGNATURE_SHA256="${BLACKBOX_GUARD_SIGNATURE_SHA256}"
+        BLACKBOX_GUARD_TRACER_INTERVAL_SECONDS=${BLACKBOX_GUARD_TRACER_INTERVAL_SECONDS}
+        BLACKBOX_GUARD_DIAGNOSTIC_ENABLED=${BLACKBOX_GUARD_DIAGNOSTIC_ENABLED})
 
 # Searches for a specified prebuilt library and stores the path as a
 # variable. Because CMake includes system libraries in the search path by

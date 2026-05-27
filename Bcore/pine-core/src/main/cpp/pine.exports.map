@@ -1,0 +1,7 @@
+{
+    global:
+        JNI_OnLoad;
+        bbp_*;
+    local:
+        *;
+};

@@ -13,10 +13,32 @@ def blackBoxBooleanOption = { String name, boolean defaultValue ->
     return defaultValue
 }
 
+def blackBoxStringOption = { String name, String defaultValue ->
+    if (project.hasProperty(name)) {
+        return project.property(name).toString()
+    }
+    if (rootProject.hasProperty(name)) {
+        return rootProject.property(name).toString()
+    }
+    if (rootProject.ext.has(name)) {
+        return rootProject.ext.get(name).toString()
+    }
+    return defaultValue
+}
+
 def blackboxDiagnosticLogcatEnabledValue =
         blackBoxBooleanOption('blackboxDiagnosticLogcatEnabled', true)
 def blackboxDexDumpEnabledValue =
         blackBoxBooleanOption('blackboxDexDumpEnabled', true)
+def blackboxGuardSignatureSha256Value =
+        blackBoxStringOption('blackboxGuardSignatureSha256', '')
+def blackboxGuardTracerIntervalSecondsValue =
+        blackBoxStringOption('blackboxGuardTracerIntervalSeconds', '3')
+def blackboxGuardDiagnosticEnabledValue =
+        blackBoxBooleanOption('blackboxGuardDiagnosticEnabled', false)
+if (!(blackboxGuardTracerIntervalSecondsValue ==~ /[1-9][0-9]*/)) {
+    blackboxGuardTracerIntervalSecondsValue = '3'
+}
 
 android {
     namespace 'top.niunaijun.blackbox'
@@ -37,7 +59,10 @@ android {
                 "${blackboxDexDumpEnabledValue}"
         externalNativeBuild {
             cmake {
-                arguments "-DBLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${blackboxDiagnosticLogcatEnabledValue ? 1 : 0}"
+                arguments "-DBLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${blackboxDiagnosticLogcatEnabledValue ? 1 : 0}",
+                        "-DBLACKBOX_GUARD_SIGNATURE_SHA256=${blackboxGuardSignatureSha256Value}",
+                        "-DBLACKBOX_GUARD_TRACER_INTERVAL_SECONDS=${blackboxGuardTracerIntervalSecondsValue}",
+                        "-DBLACKBOX_GUARD_DIAGNOSTIC_ENABLED=${blackboxGuardDiagnosticEnabledValue ? 1 : 0}"
             }
         }
         ndk {

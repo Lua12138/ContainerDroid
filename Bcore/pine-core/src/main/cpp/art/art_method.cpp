@@ -31,35 +31,35 @@ Member<ArtMethod, void*>* ArtMethod::entry_point_from_interpreter_;
 Member<ArtMethod, uint32_t>* ArtMethod::declaring_class = nullptr;
 
 void ArtMethod::Init(const ElfImg* handle) {
-    art_quick_to_interpreter_bridge = handle->GetSymbolAddress("art_quick_to_interpreter_bridge");
-    art_quick_generic_jni_trampoline = handle->GetSymbolAddress("art_quick_generic_jni_trampoline");
+    art_quick_to_interpreter_bridge = handle->GetSymbolAddress(PINE_STR("art_quick_to_interpreter_bridge"));
+    art_quick_generic_jni_trampoline = handle->GetSymbolAddress(PINE_STR("art_quick_generic_jni_trampoline"));
 
     if (Android::version < Android::kN) {
         art_interpreter_to_compiled_code_bridge = handle->GetSymbolAddress(
-                "artInterpreterToCompiledCodeBridge");
+                PINE_STR("artInterpreterToCompiledCodeBridge"));
         art_interpreter_to_interpreter_bridge = handle->GetSymbolAddress(
-                "artInterpreterToInterpreterBridge");
+                PINE_STR("artInterpreterToInterpreterBridge"));
     }
 
     const char* symbol_copy_from = nullptr;
     if (Android::version >= Android::kO) {
         // art::ArtMethod::CopyFrom(art::ArtMethod *, art::PointerSize)
-        symbol_copy_from = "_ZN3art9ArtMethod8CopyFromEPS0_NS_11PointerSizeE";
+        symbol_copy_from = PINE_STR("_ZN3art9ArtMethod8CopyFromEPS0_NS_11PointerSizeE");
     } else if (Android::version >= Android::kN) {
 #ifdef __LP64__
         // art::ArtMethod::CopyFrom(art::ArtMethod *, unsigned long)
-        symbol_copy_from = "_ZN3art9ArtMethod8CopyFromEPS0_m";
+        symbol_copy_from = PINE_STR("_ZN3art9ArtMethod8CopyFromEPS0_m");
 #else
         // art::ArtMethod::CopyFrom(art::ArtMethod *, unsigned int)
-        symbol_copy_from = "_ZN3art9ArtMethod8CopyFromEPS0_j";
+        symbol_copy_from = PINE_STR("_ZN3art9ArtMethod8CopyFromEPS0_j");
 #endif
     } else if (Android::version >= Android::kM) {
 #ifdef __LP64__
         // art::ArtMethod::CopyFrom(art::ArtMethod const *, unsigned long)
-        symbol_copy_from = "_ZN3art9ArtMethod8CopyFromEPKS0_m";
+        symbol_copy_from = PINE_STR("_ZN3art9ArtMethod8CopyFromEPKS0_m");
 #else
         // art::ArtMethod::CopyFrom(art::ArtMethod const *, unsigned int)
-        symbol_copy_from = "_ZN3art9ArtMethod8CopyFromEPKS0_j";
+        symbol_copy_from = PINE_STR("_ZN3art9ArtMethod8CopyFromEPKS0_j");
 #endif
     }
 
@@ -69,7 +69,7 @@ void ArtMethod::Init(const ElfImg* handle) {
 
     if (UNLIKELY(Android::version == Android::kO))
         throw_invocation_time_error = reinterpret_cast<void (*)(ArtMethod*)>(handle->GetSymbolAddress(
-                "_ZN3art9ArtMethod24ThrowInvocationTimeErrorEv"));
+                PINE_STR("_ZN3art9ArtMethod24ThrowInvocationTimeErrorEv")));
 }
 
 ArtMethod* ArtMethod::FromReflectedMethod(JNIEnv* env, jobject javaMethod) {
@@ -312,7 +312,7 @@ bool ArtMethod::TestDontCompile(JNIEnv* env) {
     // assert(IsAbstract());
 
     // AbstractMethodError extends from IncompatibleClassChangeError
-    jclass AbstractMethodError = env->FindClass("java/lang/AbstractMethodError");
+    jclass AbstractMethodError = env->FindClass(PINE_STR("java/lang/AbstractMethodError"));
     uint32_t access_flags = GetAccessFlags();
     SetAccessFlags(access_flags | AccessFlags::kCompileDontBother_N);
     throw_invocation_time_error(this);
@@ -324,4 +324,3 @@ bool ArtMethod::TestDontCompile(JNIEnv* env) {
     env->DeleteLocalRef(exception);
     return special;
 }
-

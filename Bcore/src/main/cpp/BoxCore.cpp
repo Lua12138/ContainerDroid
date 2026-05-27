@@ -5,6 +5,7 @@
 #include "BoxCore.h"
 #include "Log.h"
 #include "IO.h"
+#include "HostGuard.h"
 #include <jni.h>
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
@@ -142,17 +143,27 @@ void init(JNIEnv *env, jobject clazz, jint api_level) {
     ALOGD("NativeCore init.");
     VMEnv.api_level = api_level;
     VMEnv.NativeCoreClass = (jclass) env->NewGlobalRef(env->FindClass(VMCORE_CLASS));
-    VMEnv.getCallingUidId = env->GetStaticMethodID(VMEnv.NativeCoreClass, "getCallingUid", "(I)I");
-    VMEnv.redirectPathString = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath",
-                                                      "(Ljava/lang/String;)Ljava/lang/String;");
-    VMEnv.redirectPathFile = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath",
-                                                    "(Ljava/io/File;)Ljava/io/File;");
-    VMEnv.loadEmptyDex = env->GetStaticMethodID(VMEnv.NativeCoreClass, "loadEmptyDex",
-                                                "()[J");
-    VMEnv.getFileSystemClass = env->GetStaticMethodID(VMEnv.NativeCoreClass, "getFileSystemClass",
-                                                      "()Ljava/lang/Class;");
-    VMEnv.findMethod = env->GetStaticMethodID(VMEnv.NativeCoreClass, "findMethod",
-                                              "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Method;");
+    VMEnv.getCallingUidId = env->GetStaticMethodID(VMEnv.NativeCoreClass,
+                                                   BB_CORE_STR("getCallingUid"),
+                                                   BB_CORE_STR("(I)I"));
+    VMEnv.redirectPathString = env->GetStaticMethodID(
+            VMEnv.NativeCoreClass,
+            BB_CORE_STR("redirectPath"),
+            BB_CORE_STR("(Ljava/lang/String;)Ljava/lang/String;"));
+    VMEnv.redirectPathFile = env->GetStaticMethodID(
+            VMEnv.NativeCoreClass,
+            BB_CORE_STR("redirectPath"),
+            BB_CORE_STR("(Ljava/io/File;)Ljava/io/File;"));
+    VMEnv.loadEmptyDex = env->GetStaticMethodID(VMEnv.NativeCoreClass,
+                                                BB_CORE_STR("loadEmptyDex"),
+                                                BB_CORE_STR("()[J"));
+    VMEnv.getFileSystemClass = env->GetStaticMethodID(VMEnv.NativeCoreClass,
+                                                      BB_CORE_STR("getFileSystemClass"),
+                                                      BB_CORE_STR("()Ljava/lang/Class;"));
+    VMEnv.findMethod = env->GetStaticMethodID(
+            VMEnv.NativeCoreClass,
+            BB_CORE_STR("findMethod"),
+            BB_CORE_STR("(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/reflect/Method;"));
 
     JniHook::InitJniHook(env, api_level);
 }
@@ -414,7 +425,7 @@ static FILE *openRealProcMapsFileForMemoryProbe() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/maps", "r");
+    return real_fopen(BB_CORE_STR("/proc/self/maps"), BB_CORE_STR("r"));
 }
 
 static bool isReadableMemoryRange(const void *address, size_t size) {
@@ -627,25 +638,25 @@ static int findRuntimeJavaVmOffset(void *runtime) {
 }
 
 static JNINativeMethod gMethods[] = {
-        {"hideXposed",          "()V",                                     (void *) hideXposed},
-        {"addIORule",           "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
-        {"enableIO",            "()V",                                     (void *) enableIO},
-        {"installSeccompShield","()V",                                     (void *) installSeccompShield},
-        {"installTerminationOnlySeccompShield", "()V",                     (void *) installTerminationOnlySeccompShield},
-        {"installTerminationTrapSeccompShield", "()V",                     (void *) installTerminationTrapSeccompShield},
-        {"installRawSyscallEnvironmentProbe", "()V",                       (void *) installRawSyscallEnvironmentProbe},
-        {"installRawSyscallTerminationProbe", "()V",                       (void *) installRawSyscallTerminationProbe},
-        {"setVirtualUid",       "(I)V",                                    (void *) setVirtualUid},
-        {"setNativeSandboxEnvironment", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", (void *) configureNativeSandboxEnvironmentWithProcess},
-        {"setNativeSandboxEnvironmentPackage", "(Ljava/lang/String;)V",    (void *) configureNativeSandboxEnvironment},
-        {"setNativeTerminationShieldPackage", "(Ljava/lang/String;)V",     (void *) configureNativeTerminationShield},
-        {"disableEarlyProcMapsShim", "()V",                                (void *) disableNativeEarlyProcMapsShim},
-        {"enterNativeInternalFileProbe", "()V",                             (void *) enterNativeInternalFileProbeJni},
-        {"leaveNativeInternalFileProbe", "()V",                             (void *) leaveNativeInternalFileProbeJni},
-        {"writeSanitizedProcMapsSnapshot", "(Ljava/lang/String;Ljava/lang/String;)Z", (void *) writeSanitizedProcMapsSnapshotJni},
-        {"enableBinderMonitor", "(ZZ)V",                                   (void *) enableBinderMonitor},
-        {"dumpDexCookieNative", "(JLjava/lang/String;)Z",                   (void *) dumpDexCookieNative},
-        {"init",                "(I)V",                                    (void *) init},
+        {BB_CORE_STR("hideXposed"),          BB_CORE_STR("()V"),                                     (void *) hideXposed},
+        {BB_CORE_STR("addIORule"),           BB_CORE_STR("(Ljava/lang/String;Ljava/lang/String;)V"), (void *) addIORule},
+        {BB_CORE_STR("enableIO"),            BB_CORE_STR("()V"),                                     (void *) enableIO},
+        {BB_CORE_STR("installSeccompShield"),BB_CORE_STR("()V"),                                     (void *) installSeccompShield},
+        {BB_CORE_STR("installTerminationOnlySeccompShield"), BB_CORE_STR("()V"),                     (void *) installTerminationOnlySeccompShield},
+        {BB_CORE_STR("installTerminationTrapSeccompShield"), BB_CORE_STR("()V"),                     (void *) installTerminationTrapSeccompShield},
+        {BB_CORE_STR("installRawSyscallEnvironmentProbe"), BB_CORE_STR("()V"),                       (void *) installRawSyscallEnvironmentProbe},
+        {BB_CORE_STR("installRawSyscallTerminationProbe"), BB_CORE_STR("()V"),                       (void *) installRawSyscallTerminationProbe},
+        {BB_CORE_STR("setVirtualUid"),       BB_CORE_STR("(I)V"),                                    (void *) setVirtualUid},
+        {BB_CORE_STR("setNativeSandboxEnvironment"), BB_CORE_STR("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"), (void *) configureNativeSandboxEnvironmentWithProcess},
+        {BB_CORE_STR("setNativeSandboxEnvironmentPackage"), BB_CORE_STR("(Ljava/lang/String;)V"),    (void *) configureNativeSandboxEnvironment},
+        {BB_CORE_STR("setNativeTerminationShieldPackage"), BB_CORE_STR("(Ljava/lang/String;)V"),     (void *) configureNativeTerminationShield},
+        {BB_CORE_STR("disableEarlyProcMapsShim"), BB_CORE_STR("()V"),                                (void *) disableNativeEarlyProcMapsShim},
+        {BB_CORE_STR("enterNativeInternalFileProbe"), BB_CORE_STR("()V"),                             (void *) enterNativeInternalFileProbeJni},
+        {BB_CORE_STR("leaveNativeInternalFileProbe"), BB_CORE_STR("()V"),                             (void *) leaveNativeInternalFileProbeJni},
+        {BB_CORE_STR("writeSanitizedProcMapsSnapshot"), BB_CORE_STR("(Ljava/lang/String;Ljava/lang/String;)Z"), (void *) writeSanitizedProcMapsSnapshotJni},
+        {BB_CORE_STR("enableBinderMonitor"), BB_CORE_STR("(ZZ)V"),                                   (void *) enableBinderMonitor},
+        {BB_CORE_STR("dumpDexCookieNative"), BB_CORE_STR("(JLjava/lang/String;)Z"),                   (void *) dumpDexCookieNative},
+        {BB_CORE_STR("init"),                BB_CORE_STR("(I)V"),                                    (void *) init},
 };
 
 int registerNativeMethods(JNIEnv *env, const char *className,
@@ -678,6 +689,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
         return JNI_EVERSION;
     }
+    blackbox::hostguard::installHostGuard();
     registerMethod(env);
     return JNI_VERSION_1_6;
 }

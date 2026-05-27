@@ -212,20 +212,20 @@ static const char *kProcCmdlineFdPath = "/dev/fd/91";
 static const char *kProcMeminfoFdPath = "/dev/fd/92";
 static const char *kProcMapsFdPath = "/dev/fd/93";
 static const char *kProcVersionFdPath = "/dev/fd/94";
-static const char *kProcShimProperty = "debug.blackbox.proc_shim";
-static const char *kProcMapsPathSanitizeProperty = "debug.blackbox.maps_path_sanitize";
-static const char *kTransientProcMapsProperty = "debug.blackbox.transient_maps";
-static const char *kRawProcVirtualizationProperty = "debug.blackbox.raw_proc_virtual";
-static const char *kRawSyscallThreadRefreshProperty = "debug.blackbox.raw_syscall_thread_refresh";
-static const char *kProcessProbeProperty = "debug.blackbox.process_probe";
-static const char *kFileProbeProperty = "debug.blackbox.file_probe";
-static const char *kTerminationProbeProperty = "debug.blackbox.termination_probe";
-static const char *kTerminationMemoryDumpProperty = "debug.blackbox.termination_memdump";
-static const char *kNativeCrashProbeProperty = "debug.blackbox.native_crash_probe";
-static const char *kDlopenProbeProperty = "debug.blackbox.dlopen_probe";
-static const char *kEarlyDlopenRepatchProperty = "debug.blackbox.early_dlopen_repatch";
-static const char *kDlsymProbeProperty = "debug.blackbox.dlsym_probe";
-static const char *kDlsymReplacementProperty = "debug.blackbox.dlsym_replace";
+#define kProcShimProperty BB_CORE_STR("debug.blackbox.proc_shim")
+#define kProcMapsPathSanitizeProperty BB_CORE_STR("debug.blackbox.maps_path_sanitize")
+#define kTransientProcMapsProperty BB_CORE_STR("debug.blackbox.transient_maps")
+#define kRawProcVirtualizationProperty BB_CORE_STR("debug.blackbox.raw_proc_virtual")
+#define kRawSyscallThreadRefreshProperty BB_CORE_STR("debug.blackbox.raw_syscall_thread_refresh")
+#define kProcessProbeProperty BB_CORE_STR("debug.blackbox.process_probe")
+#define kFileProbeProperty BB_CORE_STR("debug.blackbox.file_probe")
+#define kTerminationProbeProperty BB_CORE_STR("debug.blackbox.termination_probe")
+#define kTerminationMemoryDumpProperty BB_CORE_STR("debug.blackbox.termination_memdump")
+#define kNativeCrashProbeProperty BB_CORE_STR("debug.blackbox.native_crash_probe")
+#define kDlopenProbeProperty BB_CORE_STR("debug.blackbox.dlopen_probe")
+#define kEarlyDlopenRepatchProperty BB_CORE_STR("debug.blackbox.early_dlopen_repatch")
+#define kDlsymProbeProperty BB_CORE_STR("debug.blackbox.dlsym_probe")
+#define kDlsymReplacementProperty BB_CORE_STR("debug.blackbox.dlsym_replace")
 constexpr int kSignalAbort = SIGABRT;
 constexpr int kSignalKill = SIGKILL;
 constexpr int kSignalTerm = SIGTERM;
@@ -354,7 +354,7 @@ long callKernelSyscall(long number, long args[6]) {
                                                           args[4],
                                                           args[5]));
 #else
-    SyscallFn fn = resolveSymbol(&gOrigSyscall, "syscall");
+    SyscallFn fn = resolveSymbol(&gOrigSyscall, BB_CORE_STR("syscall"));
     if (fn == nullptr) {
         errno = ENOSYS;
         return -1;
@@ -394,12 +394,12 @@ bool shouldSkipPatchObject(const char *name) {
     if (name == nullptr) {
         return false;
     }
-    return strstr(name, "libblackbox.so") != nullptr
-           || strstr(name, "libblackhook.so") != nullptr
-           || strstr(name, "libblackdex.so") != nullptr
-           || strstr(name, "libpine.so") != nullptr
-           || strstr(name, "/libc.so") != nullptr
-           || strstr(name, "/linker") != nullptr;
+    return strstr(name, BB_CORE_STR("libblackbox.so")) != nullptr
+           || strstr(name, BB_CORE_STR("libblackhook.so")) != nullptr
+           || strstr(name, BB_CORE_STR("libblackdex.so")) != nullptr
+           || strstr(name, BB_CORE_STR("libpine.so")) != nullptr
+           || strstr(name, BB_CORE_STR("/libc.so")) != nullptr
+           || strstr(name, BB_CORE_STR("/linker")) != nullptr;
 }
 
 void patchSlot(uintptr_t *slot, NativePatchSpec *spec) {
@@ -801,7 +801,7 @@ int rawKill(pid_t pid, int signal) {
     long result = callKernelSyscall(__NR_kill, static_cast<long>(pid), static_cast<long>(signal));
     return static_cast<int>(result);
 #else
-    KillFn fn = resolveSymbol(&gOrigKill, "kill");
+    KillFn fn = resolveSymbol(&gOrigKill, BB_CORE_STR("kill"));
     if (fn == nullptr) {
         errno = ENOSYS;
         return -1;
@@ -815,7 +815,7 @@ int rawTkill(pid_t tid, int signal) {
     long result = callKernelSyscall(__NR_tkill, static_cast<long>(tid), static_cast<long>(signal));
     return static_cast<int>(result);
 #else
-    KillFn fn = resolveSymbol(&gOrigTkill, "tkill");
+    KillFn fn = resolveSymbol(&gOrigTkill, BB_CORE_STR("tkill"));
     if (fn == nullptr) {
         errno = ENOSYS;
         return -1;
@@ -832,7 +832,7 @@ int rawTgkill(int tgid, int tid, int signal) {
                                     static_cast<long>(signal));
     return static_cast<int>(result);
 #else
-    TgkillFn fn = resolveSymbol(&gOrigTgkill, "tgkill");
+    TgkillFn fn = resolveSymbol(&gOrigTgkill, BB_CORE_STR("tgkill"));
     if (fn == nullptr) {
         errno = ENOSYS;
         return -1;
@@ -1019,8 +1019,8 @@ bool samePath(const char *left, const char *right) {
 }
 
 bool isProcProbePath(const char *pathname) {
-    static const char *kProcRoot = "/proc";
-    static const char *kProcPrefix = "/proc/";
+    static const char *kProcRoot = BB_CORE_STR("/proc");
+    static const char *kProcPrefix = BB_CORE_STR("/proc/");
     return pathname != nullptr
            && (strcmp(pathname, kProcRoot) == 0
                || strncmp(pathname, kProcPrefix, strlen(kProcPrefix)) == 0);
@@ -1037,7 +1037,7 @@ bool isSysfsProbePath(const char *pathname) {
 bool isAppPrivateDataProbePath(const char *pathname) {
     return containsPathPart(pathname, "/data/data/")
            || containsPathPart(pathname, "/data/user/")
-           || containsPathPart(pathname, "/blackbox/data/user/");
+           || containsPathPart(pathname, BB_CORE_STR("/blackbox/data/user/"));
 }
 
 bool isApkProbePath(const char *pathname) {
@@ -2154,12 +2154,12 @@ bool isCurrentProcessProcPath(const char *pathname, const char *entry) {
         return false;
     }
     char self_path[PATH_MAX];
-    snprintf(self_path, sizeof(self_path), "/proc/self/%s", entry);
+    snprintf(self_path, sizeof(self_path), BB_CORE_STR("/proc/self/%s"), entry);
     if (strcmp(pathname, self_path) == 0) {
         return true;
     }
     char pid_path[PATH_MAX];
-    snprintf(pid_path, sizeof(pid_path), "/proc/%d/%s", getpid(), entry);
+    snprintf(pid_path, sizeof(pid_path), BB_CORE_STR("/proc/%d/%s"), getpid(), entry);
     return strcmp(pathname, pid_path) == 0;
 }
 
@@ -2170,17 +2170,17 @@ const char *redirectProcProbeToShim(const char *pathname) {
     if (isCurrentProcessProcPath(pathname, "cmdline") && isActiveProcShimFd(kProcCmdlineFd)) {
         return kProcCmdlineFdPath;
     }
-    if (isCurrentProcessProcPath(pathname, "maps")
+    if (isCurrentProcessProcPath(pathname, BB_CORE_STR("maps"))
         && isProcMapsShimReadyForRedirect()
         && isActiveProcShimFd(kProcMapsFd)) {
         refreshProcMapsShimForRedirect();
         return kProcMapsFdPath;
     }
-    if (pathname != nullptr && strcmp(pathname, "/proc/meminfo") == 0
+    if (pathname != nullptr && strcmp(pathname, BB_CORE_STR("/proc/meminfo")) == 0
         && isActiveProcShimFd(kProcMeminfoFd)) {
         return kProcMeminfoFdPath;
     }
-    if (pathname != nullptr && strcmp(pathname, "/proc/version") == 0
+    if (pathname != nullptr && strcmp(pathname, BB_CORE_STR("/proc/version")) == 0
         && isActiveProcShimFd(kProcVersionFd)) {
         return kProcVersionFdPath;
     }
@@ -2198,17 +2198,17 @@ int procShimFdForReadPath(const char *pathname) {
     if (isCurrentProcessProcPath(pathname, "cmdline") && isActiveProcShimFd(kProcCmdlineFd)) {
         return kProcCmdlineFd;
     }
-    if (isCurrentProcessProcPath(pathname, "maps")
+    if (isCurrentProcessProcPath(pathname, BB_CORE_STR("maps"))
         && isProcMapsShimReadyForRedirect()
         && isActiveProcShimFd(kProcMapsFd)) {
         refreshProcMapsShimForRedirect();
         return kProcMapsFd;
     }
-    if (pathname != nullptr && strcmp(pathname, "/proc/meminfo") == 0
+    if (pathname != nullptr && strcmp(pathname, BB_CORE_STR("/proc/meminfo")) == 0
         && isActiveProcShimFd(kProcMeminfoFd)) {
         return kProcMeminfoFd;
     }
-    if (pathname != nullptr && strcmp(pathname, "/proc/version") == 0
+    if (pathname != nullptr && strcmp(pathname, BB_CORE_STR("/proc/version")) == 0
         && isActiveProcShimFd(kProcVersionFd)) {
         return kProcVersionFd;
     }
@@ -2255,8 +2255,8 @@ bool parseIntSuffix(const char *value, int *result) {
 }
 
 bool isProcShimFdPath(const char *pathname, int *fd) {
-    static const char *kDevFd = "/dev/fd/";
-    static const char *kProcSelfFd = "/proc/self/fd/";
+    static const char *kDevFd = BB_CORE_STR("/dev/fd/");
+    static const char *kProcSelfFd = BB_CORE_STR("/proc/self/fd/");
 
     if (pathname == nullptr) {
         return false;
@@ -2281,8 +2281,8 @@ bool isProcShimFdPath(const char *pathname, int *fd) {
         return true;
     }
 
-    const char *prefix = "/proc/";
-    const char *middle = "/fd/";
+    const char *prefix = BB_CORE_STR("/proc/");
+    const char *middle = BB_CORE_STR("/fd/");
     if (strncmp(pathname, prefix, strlen(prefix)) == 0) {
         const char *pid_start = pathname + strlen(prefix);
         const char *fd_marker = strstr(pid_start, middle);
@@ -2314,17 +2314,17 @@ const char *procShimReadlinkTarget(int fd, char *buffer, size_t buffer_size) {
     }
     switch (fd) {
         case 90:
-            snprintf(buffer, buffer_size, "/proc/%d/comm", getpid());
+            snprintf(buffer, buffer_size, BB_CORE_STR("/proc/%d/comm"), getpid());
             return buffer;
         case 91:
-            snprintf(buffer, buffer_size, "/proc/%d/cmdline", getpid());
+            snprintf(buffer, buffer_size, BB_CORE_STR("/proc/%d/cmdline"), getpid());
             return buffer;
         case 92:
-            return "/proc/meminfo";
+            return BB_CORE_STR("/proc/meminfo");
         case 93:
-            return "/proc/self/maps";
+            return BB_CORE_STR("/proc/self/maps");
         case 94:
-            return "/proc/version";
+            return BB_CORE_STR("/proc/version");
         default:
             return nullptr;
     }
@@ -2380,7 +2380,7 @@ ssize_t callRawReadlink(const char *pathname, char *buf, size_t bufsiz) {
 }
 
 bool isVirtualProcMapsFdTarget(const char *target) {
-    return target != nullptr && strstr(target, "bb_proc_maps") != nullptr;
+    return target != nullptr && strstr(target, BB_CORE_STR("bb_proc_maps")) != nullptr;
 }
 
 const char *virtualProcMapsReadlinkTarget(const char *pathname, char *target_buffer, size_t target_buffer_size) {
@@ -2395,7 +2395,7 @@ const char *virtualProcMapsReadlinkTarget(const char *pathname, char *target_buf
     if (!isVirtualProcMapsFdTarget(target_buffer)) {
         return nullptr;
     }
-    return "/proc/self/maps";
+    return BB_CORE_STR("/proc/self/maps");
 }
 
 bool isVirtualProcMapsFd(int fd) {
@@ -2404,7 +2404,7 @@ bool isVirtualProcMapsFd(int fd) {
     }
     char fd_path[64];
     char target[PATH_MAX];
-    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    snprintf(fd_path, sizeof(fd_path), BB_CORE_STR("/proc/self/fd/%d"), fd);
     ssize_t length = callRawReadlink(fd_path, target, sizeof(target) - 1);
     if (length <= 0) {
         return false;
@@ -2414,12 +2414,12 @@ bool isVirtualProcMapsFd(int fd) {
 }
 
 bool isBlackBoxProcCmdlinePath(const char *pathname) {
-    return containsPathPart(pathname, "/blackbox/proc/")
-           && endsWithPathPart(pathname, "/cmdline");
+    return containsPathPart(pathname, BB_CORE_STR("/blackbox/proc/"))
+           && endsWithPathPart(pathname, BB_CORE_STR("/cmdline"));
 }
 
 bool isProcCmdlineProbePath(const char *pathname, const char *redirected) {
-    return isCurrentProcessProcPath(pathname, "cmdline")
+    return isCurrentProcessProcPath(pathname, BB_CORE_STR("cmdline"))
            || isBlackBoxProcCmdlinePath(pathname)
            || isBlackBoxProcCmdlinePath(redirected);
 }
@@ -2430,7 +2430,7 @@ bool isProcCmdlineFd(int fd) {
     }
     char fd_path[64];
     char target[PATH_MAX];
-    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    snprintf(fd_path, sizeof(fd_path), BB_CORE_STR("/proc/self/fd/%d"), fd);
     ssize_t length = callRawReadlink(fd_path, target, sizeof(target) - 1);
     if (length <= 0) {
         return false;
@@ -2505,14 +2505,14 @@ bool isProcStatusFd(int fd) {
     }
     char fd_path[64];
     char target[PATH_MAX];
-    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    snprintf(fd_path, sizeof(fd_path), BB_CORE_STR("/proc/self/fd/%d"), fd);
     ssize_t length = callRawReadlink(fd_path, target, sizeof(target) - 1);
     if (length <= 0) {
         return false;
     }
     target[length] = '\0';
     return isProcStatusProbePath(target, nullptr)
-           || strstr(target, "bb_proc_status") != nullptr;
+           || strstr(target, BB_CORE_STR("bb_proc_status")) != nullptr;
 }
 
 void sanitizeProcStatusStat(struct stat *buf) {
@@ -2801,8 +2801,8 @@ void logReadlinkPath(const char *api,
 }
 
 const char *sanitizeDladdrPath(const char *path) {
-    static const char *kBlackBoxDataUser = "/blackbox/data/user/";
-    static const char *kAndroidDataData = "/data/data/";
+    static const char *kBlackBoxDataUser = BB_CORE_STR("/blackbox/data/user/");
+    static const char *kAndroidDataData = BB_CORE_STR("/data/data/");
 
     if (path == nullptr) {
         return path;
@@ -2828,7 +2828,7 @@ const char *sanitizeDladdrPath(const char *path) {
     size_t package_length = static_cast<size_t>(package_end - package_name);
     int written = snprintf(gSanitizedDladdrPath,
                            sizeof(gSanitizedDladdrPath),
-                           "%s%.*s%s",
+                           BB_CORE_STR("%s%.*s%s"),
                            kAndroidDataData,
                            static_cast<int>(package_length),
                            package_name,
@@ -2841,7 +2841,7 @@ const char *sanitizeDladdrPath(const char *path) {
 
 void logDladdrPath(const char *original, const char *sanitized, int result) {
     if (samePath(original, sanitized)
-        && !containsPathPart(original, "/blackbox/data/user/")) {
+        && !containsPathPart(original, BB_CORE_STR("/blackbox/data/user/"))) {
         return;
     }
     ALOGD("native dladdr probe path=%s sanitized=%s result=%d",
@@ -2888,7 +2888,7 @@ bool resolveDirFd(int dirfd, char *buffer, size_t buffer_size) {
         return false;
     }
     char fd_path[64];
-    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", dirfd);
+    snprintf(fd_path, sizeof(fd_path), BB_CORE_STR("/proc/self/fd/%d"), dirfd);
     ssize_t length = callRawReadlink(fd_path, buffer, buffer_size - 1);
     if (length <= 0) {
         return false;
@@ -2912,7 +2912,7 @@ const char *redirectOpenAtPath(int dirfd, const char *pathname, bool *use_absolu
     if (!resolveDirFd(dirfd, dir_path, sizeof(dir_path))) {
         return pathname;
     }
-    if (strcmp(dir_path, "/proc") != 0 && strncmp(dir_path, "/proc/", 6) != 0) {
+    if (strcmp(dir_path, BB_CORE_STR("/proc")) != 0 && strncmp(dir_path, BB_CORE_STR("/proc/"), 6) != 0) {
         return pathname;
     }
 
@@ -3235,7 +3235,7 @@ FILE *openRealProcMapsFile() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/maps", "re");
+    return real_fopen(BB_CORE_STR("/proc/self/maps"), BB_CORE_STR("re"));
 }
 
 FILE *openRealProcStatusFile() {
@@ -3247,7 +3247,7 @@ FILE *openRealProcStatusFile() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/status", "re");
+    return real_fopen(BB_CORE_STR("/proc/self/status"), BB_CORE_STR("re"));
 }
 
 FILE *openRealProcCgroupFile() {
@@ -3259,7 +3259,7 @@ FILE *openRealProcCgroupFile() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/cgroup", "re");
+    return real_fopen(BB_CORE_STR("/proc/self/cgroup"), BB_CORE_STR("re"));
 }
 
 FILE *openRealProcAttrCurrentFile() {
@@ -3271,7 +3271,7 @@ FILE *openRealProcAttrCurrentFile() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/attr/current", "re");
+    return real_fopen(BB_CORE_STR("/proc/self/attr/current"), BB_CORE_STR("re"));
 }
 
 void replaceAll(std::string *value, const char *needle, const char *replacement) {
@@ -3310,15 +3310,15 @@ void replaceFirstNumericToken(std::string *value, const char *prefix, int replac
 
 bool shouldHideEarlyMapsLine(const char *line) {
     return isNativeHostPackagePath(line)
-           || containsPathPart(line, "libblackbox.so")
-           || containsPathPart(line, "libblackhook.so")
-           || containsPathPart(line, "libblackdex.so")
-           || containsPathPart(line, "libpine.so")
-           || containsPathPart(line, "[anon:pine codes]");
+           || containsPathPart(line, BB_CORE_STR("libblackbox.so"))
+           || containsPathPart(line, BB_CORE_STR("libblackhook.so"))
+           || containsPathPart(line, BB_CORE_STR("libblackdex.so"))
+           || containsPathPart(line, BB_CORE_STR("libpine.so"))
+           || containsPathPart(line, BB_CORE_STR("[anon:pine codes]"));
 }
 
 bool shouldHideEarlyRawMapsLine(const char *line) {
-    return !containsPathPart(line, "/blackbox/data/user/")
+    return !containsPathPart(line, BB_CORE_STR("/blackbox/data/user/"))
            && shouldHideEarlyMapsLine(line);
 }
 
@@ -3374,14 +3374,14 @@ bool isFrameworkOrHookNativeCallerPath(const char *path) {
         || containsPathPart(path, "/product/")) {
         return true;
     }
-    if (containsPathPart(path, "libblackbox.so")
-        || containsPathPart(path, "libblackhook.so")
-        || containsPathPart(path, "libblackdex.so")
-        || containsPathPart(path, "libpine.so")) {
+    if (containsPathPart(path, BB_CORE_STR("libblackbox.so"))
+        || containsPathPart(path, BB_CORE_STR("libblackhook.so"))
+        || containsPathPart(path, BB_CORE_STR("libblackdex.so"))
+        || containsPathPart(path, BB_CORE_STR("libpine.so"))) {
         return true;
     }
     return isNativeHostPackagePath(path)
-           && !containsPathPart(path, "/blackbox/data/user/");
+           && !containsPathPart(path, BB_CORE_STR("/blackbox/data/user/"));
 }
 
 bool isAppOwnedNativeCallerPath(const char *path) {
@@ -3392,10 +3392,10 @@ bool isAppOwnedNativeCallerPath(const char *path) {
     if (isFrameworkOrHookNativeCallerPath(path)) {
         return false;
     }
-    return containsPathPart(path, "/blackbox/data/user/")
-           || containsPathPart(path, "/data/user/")
-           || containsPathPart(path, "/data/data/")
-           || containsPathPart(path, "/data/app/");
+    return containsPathPart(path, BB_CORE_STR("/blackbox/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/data/"))
+           || containsPathPart(path, BB_CORE_STR("/data/app/"));
 }
 
 bool isAppOwnedNativeAddress(void *address) {
@@ -3445,8 +3445,8 @@ bool isWithinAppNativeLoaderMapsWindow() {
 }
 
 bool isBionicLibcCallerPath(const char *path) {
-    return containsPathPart(path, "/bionic/libc.so")
-           || containsPathPart(path, "/bionic/lib64/libc.so");
+    return containsPathPart(path, BB_CORE_STR("/bionic/libc.so"))
+           || containsPathPart(path, BB_CORE_STR("/bionic/lib64/libc.so"));
 }
 
 bool isAppOwnedNativeLibraryPath(const char *path) {
@@ -3454,13 +3454,13 @@ bool isAppOwnedNativeLibraryPath(const char *path) {
     if (package_name[0] == '\0'
         || path == nullptr
         || !containsPathPart(path, package_name)
-        || !endsWithPathPart(path, ".so")) {
+        || !endsWithPathPart(path, BB_CORE_STR(".so"))) {
         return false;
     }
-    return containsPathPart(path, "/blackbox/data/user/")
-           || containsPathPart(path, "/data/user/")
-           || containsPathPart(path, "/data/data/")
-           || containsPathPart(path, "/data/app/");
+    return containsPathPart(path, BB_CORE_STR("/blackbox/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/data/"))
+           || containsPathPart(path, BB_CORE_STR("/data/app/"));
 }
 
 bool isAppPrivateNativeLibraryPath(const char *path) {
@@ -3468,12 +3468,12 @@ bool isAppPrivateNativeLibraryPath(const char *path) {
     if (package_name[0] == '\0'
         || path == nullptr
         || !containsPathPart(path, package_name)
-        || !endsWithPathPart(path, ".so")) {
+        || !endsWithPathPart(path, BB_CORE_STR(".so"))) {
         return false;
     }
-    return containsPathPart(path, "/blackbox/data/user/")
-           || containsPathPart(path, "/data/user/")
-           || containsPathPart(path, "/data/data/");
+    return containsPathPart(path, BB_CORE_STR("/blackbox/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/user/"))
+           || containsPathPart(path, BB_CORE_STR("/data/data/"));
 }
 
 void markAppNativeLoaderMapsWindow(const char *path) {
@@ -3621,9 +3621,9 @@ void replaceBlackBoxDataUserRoots(std::string *value) {
     if (value == nullptr) {
         return;
     }
-    static const char *kMarker = "/blackbox/data/user/";
-    static const char *kDataData = "/data/data/";
-    static const char *kPublicRoot = "/data/user/";
+    static const char *kMarker = BB_CORE_STR("/blackbox/data/user/");
+    static const char *kDataData = BB_CORE_STR("/data/data/");
+    static const char *kPublicRoot = BB_CORE_STR("/data/user/");
 
     size_t pos = 0;
     while ((pos = value->find(kMarker, pos)) != std::string::npos) {
@@ -3638,7 +3638,7 @@ void replaceBlackBoxDataUserRoots(std::string *value) {
 std::string sanitizeProcMapsPathOnlyLine(const char *line) {
     std::string sanitized(line == nullptr ? "" : line);
     replaceBlackBoxDataUserRoots(&sanitized);
-    replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
+    replaceAll(&sanitized, BB_CORE_STR("/blackbox/data/user/"), BB_CORE_STR("/data/user/"));
     return sanitized;
 }
 
@@ -3654,8 +3654,8 @@ std::string sanitizeEarlyMapsLineForPackage(const char *line, const char *packag
     if (package_name != nullptr && package_name[0] != '\0' && hasNativeHostPackage()) {
         replaceAll(&sanitized, gNativeHostPackage, package_name);
     }
-    replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
-    replaceAll(&sanitized, "/blackbox/", "/data/");
+    replaceAll(&sanitized, BB_CORE_STR("/blackbox/data/user/"), BB_CORE_STR("/data/user/"));
+    replaceAll(&sanitized, BB_CORE_STR("/blackbox/"), BB_CORE_STR("/data/"));
     return sanitized;
 }
 
@@ -3828,17 +3828,17 @@ bool writeVirtualProcStatusFile(int fd) {
         std::string task_comm = linuxTaskCommForProcessName(currentVirtualProcessNameForProcStatus());
         char fallback[512];
         int written = snprintf(fallback, sizeof(fallback),
-                               "Name:\t%s\n"
-                               "State:\tR (running)\n"
-                               "Tgid:\t%d\n"
-                               "Pid:\t%d\n"
-                               "PPid:\t%d\n"
-                               "TracerPid:\t0\n"
-                               "Uid:\t%d\t%d\t%d\t%d\n"
-                               "Gid:\t%d\t%d\t%d\t%d\n"
-                               "Groups:\t%s \n"
-                               "NoNewPrivs:\t0\n"
-                               "Seccomp:\t2\n",
+                               BB_CORE_STR("Name:\t%s\n"
+                                           "State:\tR (running)\n"
+                                           "Tgid:\t%d\n"
+                                           "Pid:\t%d\n"
+                                           "PPid:\t%d\n"
+                                           "TracerPid:\t0\n"
+                                           "Uid:\t%d\t%d\t%d\t%d\n"
+                                           "Gid:\t%d\t%d\t%d\t%d\n"
+                                           "Groups:\t%s \n"
+                                           "NoNewPrivs:\t0\n"
+                                           "Seccomp:\t2\n"),
                                task_comm.c_str(),
                                getpid(), getpid(), getppid(),
                                gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid, gNativeVirtualUid,
@@ -3963,9 +3963,9 @@ bool writeAppVisibleProcMapsFile(int fd) {
 
 int createAnonymousProcFd(const char *name) {
 #ifdef __NR_memfd_create
-    SyscallFn fn = resolveSymbol(&gOrigSyscall, "syscall");
+    SyscallFn fn = resolveSymbol(&gOrigSyscall, BB_CORE_STR("syscall"));
     long args[6] = {
-            reinterpret_cast<long>(name == nullptr ? "bb_proc" : name),
+            reinterpret_cast<long>(name == nullptr ? BB_CORE_STR("bb_proc") : name),
             static_cast<long>(MFD_CLOEXEC),
             0, 0, 0, 0
     };
@@ -3979,7 +3979,7 @@ int createAnonymousProcFd(const char *name) {
 }
 
 int createEarlyProcMapsFd() {
-    return createAnonymousProcFd("bb_proc_maps");
+    return createAnonymousProcFd(BB_CORE_STR("bb_proc_maps"));
 }
 
 bool isProcStatusProbePath(const char *pathname, const char *redirected) {
@@ -4018,7 +4018,7 @@ int openVirtualProcStatusFdForRead(const char *pathname) {
     if (!isNativeVirtualUidConfigured() || !isProcStatusProbePath(pathname, nullptr)) {
         return -1;
     }
-    return openVirtualProcFdForRead(pathname, "bb_proc_status", writeVirtualProcStatusFile);
+    return openVirtualProcFdForRead(pathname, BB_CORE_STR("bb_proc_status"), writeVirtualProcStatusFile);
 }
 
 int openVirtualProcIdentityFdForRead(const char *pathname) {
@@ -4026,10 +4026,10 @@ int openVirtualProcIdentityFdForRead(const char *pathname) {
         return openVirtualProcStatusFdForRead(pathname);
     }
     if (isProcCgroupProbePath(pathname)) {
-        return openVirtualProcFdForRead(pathname, "bb_proc_cgroup", writeVirtualProcCgroupFile);
+        return openVirtualProcFdForRead(pathname, BB_CORE_STR("bb_proc_cgroup"), writeVirtualProcCgroupFile);
     }
     if (isProcAttrCurrentProbePath(pathname)) {
-        return openVirtualProcFdForRead(pathname, "bb_proc_attr_current", writeVirtualProcAttrCurrentFile);
+        return openVirtualProcFdForRead(pathname, BB_CORE_STR("bb_proc_attr_current"), writeVirtualProcAttrCurrentFile);
     }
     return -1;
 }
@@ -4037,7 +4037,7 @@ int openVirtualProcIdentityFdForRead(const char *pathname) {
 bool shouldUseTransientProcMaps(const char *pathname) {
     return isNativeSandboxEnvironmentConfigured()
            && !isProcShimEnabled()
-           && isCurrentProcessProcPath(pathname, "maps");
+           && isCurrentProcessProcPath(pathname, BB_CORE_STR("maps"));
 }
 
 int openTransientProcMapsFdForRead(const char *pathname, void *caller) {
@@ -4046,7 +4046,7 @@ int openTransientProcMapsFdForRead(const char *pathname, void *caller) {
     }
     const bool transient_hide = isTransientProcMapsEnabled();
     if (transient_hide) {
-        int fd = createAnonymousProcFd("bb_proc_maps");
+        int fd = createAnonymousProcFd(BB_CORE_STR("bb_proc_maps"));
         if (fd < 0) {
             return -1;
         }
@@ -4065,7 +4065,7 @@ int openTransientProcMapsFdForRead(const char *pathname, void *caller) {
         return -1;
     }
     const bool app_visible = shouldUseAppVisibleProcMapsForCaller(caller);
-    int fd = createAnonymousProcFd(app_visible ? "bb_proc_maps_app" : "bb_proc_maps_public");
+    int fd = createAnonymousProcFd(app_visible ? BB_CORE_STR("bb_proc_maps_app") : BB_CORE_STR("bb_proc_maps_public"));
     if (fd < 0) {
         return -1;
     }
@@ -4379,19 +4379,19 @@ extern "C" int blackbox_direct_open(const char *pathname, int flags, ...) {
                           pathname == nullptr ? "null" : pathname,
                           transient_maps);
                 }
-                logOpenPath("direct.open", pathname, redirected, flags, transient_maps, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.open"), pathname, redirected, flags, transient_maps, __builtin_return_address(0));
                 return transient_maps;
             }
         }
         if (virtualize_proc_maps) {
             int shim_result = openProcShimFdForRead(pathname);
             if (shim_result >= 0) {
-                logOpenPath("direct.open", pathname, redirected, flags, shim_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.open"), pathname, redirected, flags, shim_result, __builtin_return_address(0));
                 return shim_result;
             }
             int status_result = openVirtualProcIdentityFdForRead(pathname);
             if (status_result >= 0) {
-                logOpenPath("direct.open", pathname, redirected, flags, status_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.open"), pathname, redirected, flags, status_result, __builtin_return_address(0));
                 return status_result;
             }
         }
@@ -4399,7 +4399,7 @@ extern "C" int blackbox_direct_open(const char *pathname, int flags, ...) {
 
     int result = rawDirectOpenAt(AT_FDCWD, redirected, flags, mode);
     maybeMarkAppNativeLoaderMapsWindow(pathname, redirected, result);
-    logOpenPath("direct.open", pathname, redirected, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("direct.open"), pathname, redirected, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -4421,19 +4421,19 @@ extern "C" int blackbox_direct_open_2(const char *pathname, int flags) {
                           pathname == nullptr ? "null" : pathname,
                           transient_maps);
                 }
-                logOpenPath("direct.__open_2", pathname, redirected, flags, transient_maps, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.__open_2"), pathname, redirected, flags, transient_maps, __builtin_return_address(0));
                 return transient_maps;
             }
         }
         if (virtualize_proc_maps) {
             int shim_result = openProcShimFdForRead(pathname);
             if (shim_result >= 0) {
-                logOpenPath("direct.__open_2", pathname, redirected, flags, shim_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.__open_2"), pathname, redirected, flags, shim_result, __builtin_return_address(0));
                 return shim_result;
             }
             int status_result = openVirtualProcIdentityFdForRead(pathname);
             if (status_result >= 0) {
-                logOpenPath("direct.__open_2", pathname, redirected, flags, status_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.__open_2"), pathname, redirected, flags, status_result, __builtin_return_address(0));
                 return status_result;
             }
         }
@@ -4441,7 +4441,7 @@ extern "C" int blackbox_direct_open_2(const char *pathname, int flags) {
 
     int result = rawDirectOpenAt(AT_FDCWD, redirected, flags, 0);
     maybeMarkAppNativeLoaderMapsWindow(pathname, redirected, result);
-    logOpenPath("direct.__open_2", pathname, redirected, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("direct.__open_2"), pathname, redirected, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -4471,7 +4471,7 @@ extern "C" int blackbox_direct_openat(int dirfd, const char *pathname, int flags
                           resolved_log.path == nullptr ? "null" : resolved_log.path,
                           transient_maps);
                 }
-                logOpenPath("direct.openat", resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.openat"), resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
                 return transient_maps;
             }
         }
@@ -4479,7 +4479,7 @@ extern "C" int blackbox_direct_openat(int dirfd, const char *pathname, int flags
             int shim_result = openProcShimFdForRead(resolved_log.path);
             if (shim_result >= 0) {
                 const char *redirected_log = use_absolute ? redirected : redirectProcProbeToShim(resolved_log.path);
-                logOpenPath("direct.openat", resolved_log.path,
+                logOpenPath(BB_CORE_STR("direct.openat"), resolved_log.path,
                             redirected_log == nullptr ? resolved_log.path : redirected_log,
                             flags,
                             shim_result,
@@ -4489,7 +4489,7 @@ extern "C" int blackbox_direct_openat(int dirfd, const char *pathname, int flags
             int status_result = openVirtualProcIdentityFdForRead(resolved_log.path);
             if (status_result >= 0) {
                 const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-                logOpenPath("direct.openat", resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.openat"), resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
                 return status_result;
             }
         }
@@ -4498,7 +4498,7 @@ extern "C" int blackbox_direct_openat(int dirfd, const char *pathname, int flags
     int result = rawDirectOpenAt(use_absolute ? AT_FDCWD : dirfd, redirected, flags, mode);
     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
     maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);
-    logOpenPath("direct.openat", resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("direct.openat"), resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -4523,7 +4523,7 @@ extern "C" int blackbox_direct_openat_2(int dirfd, const char *pathname, int fla
                           resolved_log.path == nullptr ? "null" : resolved_log.path,
                           transient_maps);
                 }
-                logOpenPath("direct.__openat_2", resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.__openat_2"), resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
                 return transient_maps;
             }
         }
@@ -4531,7 +4531,7 @@ extern "C" int blackbox_direct_openat_2(int dirfd, const char *pathname, int fla
             int shim_result = openProcShimFdForRead(resolved_log.path);
             if (shim_result >= 0) {
                 const char *redirected_log = use_absolute ? redirected : redirectProcProbeToShim(resolved_log.path);
-                logOpenPath("direct.__openat_2", resolved_log.path,
+                logOpenPath(BB_CORE_STR("direct.__openat_2"), resolved_log.path,
                             redirected_log == nullptr ? resolved_log.path : redirected_log,
                             flags,
                             shim_result,
@@ -4541,7 +4541,7 @@ extern "C" int blackbox_direct_openat_2(int dirfd, const char *pathname, int fla
             int status_result = openVirtualProcIdentityFdForRead(resolved_log.path);
             if (status_result >= 0) {
                 const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-                logOpenPath("direct.__openat_2", resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
+                logOpenPath(BB_CORE_STR("direct.__openat_2"), resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
                 return status_result;
             }
         }
@@ -4550,7 +4550,7 @@ extern "C" int blackbox_direct_openat_2(int dirfd, const char *pathname, int fla
     int result = rawDirectOpenAt(use_absolute ? AT_FDCWD : dirfd, redirected, flags, 0);
     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
     maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);
-    logOpenPath("direct.__openat_2", resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("direct.__openat_2"), resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -4674,7 +4674,7 @@ extern "C" int openat(int dirfd, const char *pathname, int flags, ...) {
     va_end(args);
 
     if (isInternalFileProbe()) {
-        return callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"), dirfd, pathname, flags, mode);
+        return callOpenAt(resolveSymbol(&gOrigOpenAt, BB_CORE_STR("openat")), dirfd, pathname, flags, mode);
     }
 
     bool use_absolute = false;
@@ -4684,13 +4684,13 @@ extern "C" int openat(int dirfd, const char *pathname, int flags, ...) {
         int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));
         if (transient_maps >= 0) {
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logOpenPath("openat", resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("openat"), resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
             return transient_maps;
         }
         int shim_result = openProcShimFdForRead(resolved_log.path);
         if (shim_result >= 0) {
             const char *redirected_log = use_absolute ? redirected : redirectProcProbeToShim(resolved_log.path);
-            logOpenPath("openat", resolved_log.path,
+            logOpenPath(BB_CORE_STR("openat"), resolved_log.path,
                         redirected_log == nullptr ? resolved_log.path : redirected_log,
                         flags,
                         shim_result,
@@ -4700,15 +4700,15 @@ extern "C" int openat(int dirfd, const char *pathname, int flags, ...) {
         int status_result = openVirtualProcIdentityFdForRead(resolved_log.path);
         if (status_result >= 0) {
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logOpenPath("openat", resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("openat"), resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
             return status_result;
         }
     }
-    int result = callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"),
+    int result = callOpenAt(resolveSymbol(&gOrigOpenAt, BB_CORE_STR("openat")),
                             use_absolute ? AT_FDCWD : dirfd, redirected, flags, mode);
     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
     maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);
-    logOpenPath("openat", resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("openat"), resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -4719,11 +4719,11 @@ extern "C" int __openat_2(int dirfd, const char *pathname, int flags) {
     }
 
     if (isInternalFileProbe()) {
-        OpenAt2Fn fn = resolveSymbol(&gOrigOpenAt2, "__openat_2");
+        OpenAt2Fn fn = resolveSymbol(&gOrigOpenAt2, BB_CORE_STR("__openat_2"));
         if (fn != nullptr) {
             return fn(dirfd, pathname, flags);
         }
-        return callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"), dirfd, pathname, flags, 0);
+        return callOpenAt(resolveSymbol(&gOrigOpenAt, BB_CORE_STR("openat")), dirfd, pathname, flags, 0);
     }
 
     bool use_absolute = false;
@@ -4733,13 +4733,13 @@ extern "C" int __openat_2(int dirfd, const char *pathname, int flags) {
         int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));
         if (transient_maps >= 0) {
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logOpenPath("__openat_2", resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("__openat_2"), resolved_log.path, redirected_log, flags, transient_maps, __builtin_return_address(0));
             return transient_maps;
         }
         int shim_result = openProcShimFdForRead(resolved_log.path);
         if (shim_result >= 0) {
             const char *redirected_log = use_absolute ? redirected : redirectProcProbeToShim(resolved_log.path);
-            logOpenPath("__openat_2", resolved_log.path,
+            logOpenPath(BB_CORE_STR("__openat_2"), resolved_log.path,
                         redirected_log == nullptr ? resolved_log.path : redirected_log,
                         flags,
                         shim_result,
@@ -4749,22 +4749,22 @@ extern "C" int __openat_2(int dirfd, const char *pathname, int flags) {
         int status_result = openVirtualProcIdentityFdForRead(resolved_log.path);
         if (status_result >= 0) {
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logOpenPath("__openat_2", resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("__openat_2"), resolved_log.path, redirected_log, flags, status_result, __builtin_return_address(0));
             return status_result;
         }
     }
 
-    OpenAt2Fn fn = resolveSymbol(&gOrigOpenAt2, "__openat_2");
+    OpenAt2Fn fn = resolveSymbol(&gOrigOpenAt2, BB_CORE_STR("__openat_2"));
     int call_dirfd = use_absolute ? AT_FDCWD : dirfd;
     int result = -1;
     if (fn != nullptr) {
         result = fn(call_dirfd, redirected, flags);
     } else {
-        result = callOpenAt(resolveSymbol(&gOrigOpenAt, "openat"), call_dirfd, redirected, flags, 0);
+        result = callOpenAt(resolveSymbol(&gOrigOpenAt, BB_CORE_STR("openat")), call_dirfd, redirected, flags, 0);
     }
     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
     maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);
-    logOpenPath("__openat_2", resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
+    logOpenPath(BB_CORE_STR("__openat_2"), resolved_log.path, redirected_log, flags, result, __builtin_return_address(0));
     return result;
 }
 
@@ -5263,7 +5263,7 @@ extern "C" long syscall(long number, ...) {
     takeSyscallArgsForNumber(number, va_args, args);
     va_end(va_args);
 
-    SyscallFn fn = resolveSymbol(&gOrigSyscall, "syscall");
+    SyscallFn fn = resolveSymbol(&gOrigSyscall, BB_CORE_STR("syscall"));
     if (isInternalFileProbe()) {
         return callSyscall(fn, number, args);
     }
@@ -5314,46 +5314,46 @@ extern "C" long syscall(long number, ...) {
 #endif
 #ifdef __NR_exit
         case __NR_exit:
-            logNativeTerminationProbe("syscall.exit", getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());
+            logNativeTerminationProbe(BB_CORE_STR("syscall.exit"), getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());
             if (shouldBlockNativeExit()) {
-                logNativeTerminationBlocked("syscall.exit", getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0));
+                logNativeTerminationBlocked(BB_CORE_STR("syscall.exit"), getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0));
                 return 0;
             }
             return callSyscall(fn, number, args);
 #endif
 #ifdef __NR_exit_group
         case __NR_exit_group:
-            logNativeTerminationProbe("syscall.exit_group", getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());
+            logNativeTerminationProbe(BB_CORE_STR("syscall.exit_group"), getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());
             if (shouldBlockNativeExit()) {
-                logNativeTerminationBlocked("syscall.exit_group", getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0));
+                logNativeTerminationBlocked(BB_CORE_STR("syscall.exit_group"), getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0));
                 return 0;
             }
             return callSyscall(fn, number, args);
 #endif
 #ifdef __NR_kill
         case __NR_kill:
-            logNativeTerminationProbe("syscall.kill", args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());
+            logNativeTerminationProbe(BB_CORE_STR("syscall.kill"), args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());
             if (shouldBlockNativeSignal(static_cast<pid_t>(args[0]), static_cast<int>(args[1]))) {
-                logNativeTerminationBlocked("syscall.kill", args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0));
+                logNativeTerminationBlocked(BB_CORE_STR("syscall.kill"), args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0));
                 return 0;
             }
             return callSyscall(fn, number, args);
 #endif
 #ifdef __NR_tkill
         case __NR_tkill:
-            logNativeTerminationProbe("syscall.tkill", args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());
+            logNativeTerminationProbe(BB_CORE_STR("syscall.tkill"), args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());
             if (isNativeTerminationShieldEnabled()
                 && isTerminationSignal(static_cast<int>(args[1]))) {
-                logNativeTerminationBlocked("syscall.tkill", args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0));
+                logNativeTerminationBlocked(BB_CORE_STR("syscall.tkill"), args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0));
                 return 0;
             }
             return callSyscall(fn, number, args);
 #endif
 #ifdef __NR_tgkill
         case __NR_tgkill:
-            logNativeTerminationProbe("syscall.tgkill", args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0), currentStackPointer());
+            logNativeTerminationProbe(BB_CORE_STR("syscall.tgkill"), args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0), currentStackPointer());
             if (shouldBlockNativeThreadSignal(static_cast<int>(args[0]), static_cast<int>(args[2]))) {
-                logNativeTerminationBlocked("syscall.tgkill", args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0));
+                logNativeTerminationBlocked(BB_CORE_STR("syscall.tgkill"), args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0));
                 return 0;
             }
             return callSyscall(fn, number, args);
@@ -5361,7 +5361,7 @@ extern "C" long syscall(long number, ...) {
 #ifdef __NR_fork
         case __NR_fork: {
             long result = callSyscall(fn, number, args);
-            logProcessProbe("syscall.fork", 0, nullptr, static_cast<int>(result), __builtin_return_address(0));
+            logProcessProbe(BB_CORE_STR("syscall.fork"), 0, nullptr, static_cast<int>(result), __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5369,7 +5369,7 @@ extern "C" long syscall(long number, ...) {
         case __NR_vfork: {
             long result = callSyscall(fn, number, args);
             if (result != 0) {
-                logProcessProbe("syscall.vfork", 0, nullptr, static_cast<int>(result), __builtin_return_address(0));
+                logProcessProbe(BB_CORE_STR("syscall.vfork"), 0, nullptr, static_cast<int>(result), __builtin_return_address(0));
             }
             return result;
         }
@@ -5378,7 +5378,7 @@ extern "C" long syscall(long number, ...) {
         case __NR_clone: {
             long result = callSyscall(fn, number, args);
             if ((args[0] & CLONE_VFORK) == 0 || result != 0) {
-                logProcessProbe("syscall.clone", args[0], nullptr, static_cast<int>(result), __builtin_return_address(0));
+                logProcessProbe(BB_CORE_STR("syscall.clone"), args[0], nullptr, static_cast<int>(result), __builtin_return_address(0));
             }
             return result;
         }
@@ -5386,9 +5386,9 @@ extern "C" long syscall(long number, ...) {
 #ifdef __NR_execve
         case __NR_execve: {
             const char *pathname = reinterpret_cast<const char *>(args[0]);
-            logProcessProbe("syscall.execve.before", 0, pathname, 0, __builtin_return_address(0));
+            logProcessProbe(BB_CORE_STR("syscall.execve.before"), 0, pathname, 0, __builtin_return_address(0));
             long result = callSyscall(fn, number, args);
-            logProcessProbe("syscall.execve", 0, pathname, static_cast<int>(result), __builtin_return_address(0));
+            logProcessProbe(BB_CORE_STR("syscall.execve"), 0, pathname, static_cast<int>(result), __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5399,24 +5399,24 @@ extern "C" long syscall(long number, ...) {
             if (isReadOnlyOpenFlags(static_cast<int>(args[1]))) {
                 int transient_maps = openTransientProcMapsFdForRead(pathname, __builtin_return_address(0));
                 if (transient_maps >= 0) {
-                    logOpenPath("syscall.open", pathname, redirected, static_cast<int>(args[1]), transient_maps, __builtin_return_address(0));
+                    logOpenPath(BB_CORE_STR("syscall.open"), pathname, redirected, static_cast<int>(args[1]), transient_maps, __builtin_return_address(0));
                     return transient_maps;
                 }
                 int shim_result = openProcShimFdForRead(pathname);
                 if (shim_result >= 0) {
-                    logOpenPath("syscall.open", pathname, redirected, static_cast<int>(args[1]), shim_result, __builtin_return_address(0));
+                    logOpenPath(BB_CORE_STR("syscall.open"), pathname, redirected, static_cast<int>(args[1]), shim_result, __builtin_return_address(0));
                     return shim_result;
                 }
                 int status_result = openVirtualProcIdentityFdForRead(pathname);
                 if (status_result >= 0) {
-                    logOpenPath("syscall.open", pathname, redirected, static_cast<int>(args[1]), status_result, __builtin_return_address(0));
+                    logOpenPath(BB_CORE_STR("syscall.open"), pathname, redirected, static_cast<int>(args[1]), status_result, __builtin_return_address(0));
                     return status_result;
                 }
             }
             args[0] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
             maybeMarkAppNativeLoaderMapsWindow(pathname, redirected, result);
-            logOpenPath("syscall.open", pathname, redirected, static_cast<int>(args[1]), result, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("syscall.open"), pathname, redirected, static_cast<int>(args[1]), result, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5426,7 +5426,7 @@ extern "C" long syscall(long number, ...) {
             const char *redirected = redirectDirectoryPath(pathname);
             args[0] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
-            logMkdirPath("syscall.mkdir", pathname, redirected, static_cast<mode_t>(args[1]), static_cast<int>(result), __builtin_return_address(0));
+            logMkdirPath(BB_CORE_STR("syscall.mkdir"), pathname, redirected, static_cast<mode_t>(args[1]), static_cast<int>(result), __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5442,7 +5442,7 @@ extern "C" long syscall(long number, ...) {
             args[1] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logMkdirPath("syscall.mkdirat", resolved_log.path, redirected_log, static_cast<mode_t>(args[2]), static_cast<int>(result), __builtin_return_address(0));
+            logMkdirPath(BB_CORE_STR("syscall.mkdirat"), resolved_log.path, redirected_log, static_cast<mode_t>(args[2]), static_cast<int>(result), __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5457,7 +5457,7 @@ extern "C" long syscall(long number, ...) {
                 int transient_maps = openTransientProcMapsFdForRead(resolved_log.path, __builtin_return_address(0));
                 if (transient_maps >= 0) {
                     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-                    logOpenPath("syscall.openat", resolved_log.path, redirected_log,
+                    logOpenPath(BB_CORE_STR("syscall.openat"), resolved_log.path, redirected_log,
                                 static_cast<int>(args[2]),
                                 transient_maps,
                                 __builtin_return_address(0));
@@ -5466,7 +5466,7 @@ extern "C" long syscall(long number, ...) {
                 int shim_result = openProcShimFdForRead(resolved_log.path);
                 if (shim_result >= 0) {
                     const char *redirected_log = use_absolute ? redirected : redirectProcProbeToShim(resolved_log.path);
-                    logOpenPath("syscall.openat", resolved_log.path,
+                    logOpenPath(BB_CORE_STR("syscall.openat"), resolved_log.path,
                                 redirected_log == nullptr ? resolved_log.path : redirected_log,
                                 static_cast<int>(args[2]),
                                 shim_result,
@@ -5476,7 +5476,7 @@ extern "C" long syscall(long number, ...) {
                 int status_result = openVirtualProcIdentityFdForRead(resolved_log.path);
                 if (status_result >= 0) {
                     const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-                    logOpenPath("syscall.openat", resolved_log.path,
+                    logOpenPath(BB_CORE_STR("syscall.openat"), resolved_log.path,
                                 redirected_log,
                                 static_cast<int>(args[2]),
                                 status_result,
@@ -5491,7 +5491,7 @@ extern "C" long syscall(long number, ...) {
             long result = callSyscall(fn, number, args);
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
             maybeMarkAppNativeLoaderMapsWindow(resolved_log.path, redirected_log, result);
-            logOpenPath("syscall.openat", resolved_log.path, redirected_log, static_cast<int>(args[2]), result, __builtin_return_address(0));
+            logOpenPath(BB_CORE_STR("syscall.openat"), resolved_log.path, redirected_log, static_cast<int>(args[2]), result, __builtin_return_address(0));
             return result;
         }
 #ifdef __NR_faccessat
@@ -5502,7 +5502,7 @@ extern "C" long syscall(long number, ...) {
             const char *redirected = redirectMetadataAtPath(static_cast<int>(args[0]), pathname, &use_absolute);
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
             if (denyProcCmdlineAccessIfNeeded(resolved_log.path, redirected, static_cast<int>(args[2]))) {
-                logOpenPath("syscall.faccessat", resolved_log.path, redirected_log,
+                logOpenPath(BB_CORE_STR("syscall.faccessat"), resolved_log.path, redirected_log,
                             static_cast<int>(args[2]), -1, __builtin_return_address(0));
                 return -1;
             }
@@ -5511,7 +5511,7 @@ extern "C" long syscall(long number, ...) {
             }
             args[1] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
-            logOpenPath("syscall.faccessat", resolved_log.path, redirected_log,
+            logOpenPath(BB_CORE_STR("syscall.faccessat"), resolved_log.path, redirected_log,
                         static_cast<int>(args[2]), result, __builtin_return_address(0));
             return result;
         }
@@ -5532,7 +5532,7 @@ extern "C" long syscall(long number, ...) {
             maybeSanitizeProcStatusStat(static_cast<int>(result), resolved_log.path, redirected, buf);
             maybeSanitizeVirtualOwnerStat(static_cast<int>(result), buf);
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logStatPath("syscall.newfstatat", resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
+            logStatPath(BB_CORE_STR("syscall.newfstatat"), resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5554,7 +5554,7 @@ extern "C" long syscall(long number, ...) {
             maybeSanitizeVirtualOwnerStat64(static_cast<int>(result), buf);
 #endif
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logStatPath("syscall.fstatat64", resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
+            logStatPath(BB_CORE_STR("syscall.fstatat64"), resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5571,7 +5571,7 @@ extern "C" long syscall(long number, ...) {
             long result = callSyscall(fn, number, args);
             maybeSanitizeVirtualOwnerStatx(result, reinterpret_cast<struct statx *>(args[4]));
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logStatPath("syscall.statx", resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
+            logStatPath(BB_CORE_STR("syscall.statx"), resolved_log.path, redirected_log, static_cast<int>(result), false, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5581,7 +5581,7 @@ extern "C" long syscall(long number, ...) {
             const char *redirected = redirectFilesystemPath(pathname);
             args[0] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
-            logStatPath("syscall.statfs", pathname, redirected, static_cast<int>(result), false, __builtin_return_address(0));
+            logStatPath(BB_CORE_STR("syscall.statfs"), pathname, redirected, static_cast<int>(result), false, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5591,7 +5591,7 @@ extern "C" long syscall(long number, ...) {
             const char *redirected = redirectFilesystemPath(pathname);
             args[0] = reinterpret_cast<long>(redirected);
             long result = callSyscall(fn, number, args);
-            logStatPath("syscall.statfs64", pathname, redirected, static_cast<int>(result), false, __builtin_return_address(0));
+            logStatPath(BB_CORE_STR("syscall.statfs64"), pathname, redirected, static_cast<int>(result), false, __builtin_return_address(0));
             return result;
         }
 #endif
@@ -5612,7 +5612,7 @@ extern "C" long syscall(long number, ...) {
                 ssize_t result = copyReadlinkTarget(target,
                                                     reinterpret_cast<char *>(args[2]),
                                                     static_cast<size_t>(args[3]));
-                logReadlinkPath("syscall.readlinkat", pathname, resolved_path, target, result, true, __builtin_return_address(0));
+                logReadlinkPath(BB_CORE_STR("syscall.readlinkat"), pathname, resolved_path, target, result, true, __builtin_return_address(0));
                 return result;
             }
             const char *resolved_for_virtual = resolved_path[0] != '\0' ? resolved_path : pathname;
@@ -5621,7 +5621,7 @@ extern "C" long syscall(long number, ...) {
                 ssize_t result = copyReadlinkTarget(target,
                                                     reinterpret_cast<char *>(args[2]),
                                                     static_cast<size_t>(args[3]));
-                logReadlinkPath("syscall.readlinkat", pathname, resolved_for_virtual, target, result, true, __builtin_return_address(0));
+                logReadlinkPath(BB_CORE_STR("syscall.readlinkat"), pathname, resolved_for_virtual, target, result, true, __builtin_return_address(0));
                 return result;
             }
 
@@ -5637,7 +5637,7 @@ extern "C" long syscall(long number, ...) {
                                                      static_cast<size_t>(args[3]),
                                                      static_cast<ssize_t>(result));
             const char *redirected_log = use_absolute ? redirected : resolved_log.path;
-            logReadlinkPath("syscall.readlinkat", resolved_log.path, redirected_log, nullptr,
+            logReadlinkPath(BB_CORE_STR("syscall.readlinkat"), resolved_log.path, redirected_log, nullptr,
                             static_cast<ssize_t>(result), false, __builtin_return_address(0));
             return result;
         }
@@ -5796,27 +5796,27 @@ extern "C" int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 }
 
 extern "C" int kill(pid_t pid, int signal) {
-    logNativeTerminationProbe("kill", pid, signal, 0, __builtin_return_address(0), currentStackPointer());
+    logNativeTerminationProbe(BB_CORE_STR("kill"), pid, signal, 0, __builtin_return_address(0), currentStackPointer());
     if (shouldBlockNativeSignal(pid, signal)) {
-        logNativeTerminationBlocked("kill", pid, signal, 0, __builtin_return_address(0));
+        logNativeTerminationBlocked(BB_CORE_STR("kill"), pid, signal, 0, __builtin_return_address(0));
         return 0;
     }
     return rawKill(pid, signal);
 }
 
 extern "C" int tkill(pid_t tid, int signal) {
-    logNativeTerminationProbe("tkill", tid, signal, 0, __builtin_return_address(0), currentStackPointer());
+    logNativeTerminationProbe(BB_CORE_STR("tkill"), tid, signal, 0, __builtin_return_address(0), currentStackPointer());
     if (isNativeTerminationShieldEnabled() && isTerminationSignal(signal)) {
-        logNativeTerminationBlocked("tkill", tid, signal, 0, __builtin_return_address(0));
+        logNativeTerminationBlocked(BB_CORE_STR("tkill"), tid, signal, 0, __builtin_return_address(0));
         return 0;
     }
     return rawTkill(tid, signal);
 }
 
 extern "C" int tgkill(int tgid, int tid, int signal) {
-    logNativeTerminationProbe("tgkill", tid, signal, 0, __builtin_return_address(0), currentStackPointer());
+    logNativeTerminationProbe(BB_CORE_STR("tgkill"), tid, signal, 0, __builtin_return_address(0), currentStackPointer());
     if (shouldBlockNativeThreadSignal(tgid, signal)) {
-        logNativeTerminationBlocked("tgkill", tid, signal, 0, __builtin_return_address(0));
+        logNativeTerminationBlocked(BB_CORE_STR("tgkill"), tid, signal, 0, __builtin_return_address(0));
         return 0;
     }
     return rawTgkill(tgid, tid, signal);
@@ -5869,19 +5869,19 @@ extern "C" void _Exit(int status) {
 
 PineNativeInlineHookFuncNoBackupFn resolvePineNativeInlineHookFuncNoBackup() {
     auto hook_func = reinterpret_cast<PineNativeInlineHookFuncNoBackupFn>(
-            dlsym(RTLD_DEFAULT, "PineNativeInlineHookFuncNoBackup"));
+            dlsym(RTLD_DEFAULT, BB_CORE_STR("bbp_ih0")));
     if (hook_func != nullptr) {
         return hook_func;
     }
 
     DlopenFn open_lib = resolveSymbol(&gOrigDlopen, "dlopen");
-    void *pine_handle = open_lib == nullptr ? nullptr : open_lib("libpine.so", RTLD_NOW);
+    void *pine_handle = open_lib == nullptr ? nullptr : open_lib(BB_CORE_STR("libpine.so"), RTLD_NOW);
     if (pine_handle == nullptr) {
         ALOGD("native direct libc termination hook skipped: libpine unavailable errno=%d", errno);
         return nullptr;
     }
     return reinterpret_cast<PineNativeInlineHookFuncNoBackupFn>(
-            dlsym(pine_handle, "PineNativeInlineHookFuncNoBackup"));
+            dlsym(pine_handle, BB_CORE_STR("bbp_ih0")));
 }
 
 void installDirectLibcTerminationHooks() {
@@ -5897,9 +5897,9 @@ void installDirectLibcTerminationHooks() {
         return;
     }
 
-    DlopenFn open_lib = resolveSymbol(&gOrigDlopen, "dlopen");
-    DlsymFn sym = resolveSymbol(&gOrigDlsym, "dlsym");
-    void *libc_handle = open_lib == nullptr ? nullptr : open_lib("libc.so", RTLD_NOW);
+    DlopenFn open_lib = resolveSymbol(&gOrigDlopen, BB_CORE_STR("dlopen"));
+    DlsymFn sym = resolveSymbol(&gOrigDlsym, BB_CORE_STR("dlsym"));
+    void *libc_handle = open_lib == nullptr ? nullptr : open_lib(BB_CORE_STR("libc.so"), RTLD_NOW);
     if (libc_handle == nullptr || sym == nullptr) {
         ALOGD("native direct libc termination hook skipped: libc handle=%p dlsym=%p errno=%d",
               libc_handle,
@@ -5914,14 +5914,14 @@ void installDirectLibcTerminationHooks() {
         void *replacement;
     };
     DirectHookSpec specs[] = {
-            {"kill", reinterpret_cast<void *>(static_cast<KillFn>(kill))},
-            {"tkill", reinterpret_cast<void *>(static_cast<KillFn>(tkill))},
-            {"tgkill", reinterpret_cast<void *>(static_cast<TgkillFn>(tgkill))},
-            {"raise", reinterpret_cast<void *>(static_cast<RaiseFn>(raise))},
-            {"abort", reinterpret_cast<void *>(static_cast<AbortFn>(abort))},
-            {"exit", reinterpret_cast<void *>(static_cast<ExitFn>(exit))},
-            {"_exit", reinterpret_cast<void *>(static_cast<ExitFn>(_exit))},
-            {"_Exit", reinterpret_cast<void *>(static_cast<ExitFn>(_Exit))},
+            {BB_CORE_STR("kill"), reinterpret_cast<void *>(static_cast<KillFn>(kill))},
+            {BB_CORE_STR("tkill"), reinterpret_cast<void *>(static_cast<KillFn>(tkill))},
+            {BB_CORE_STR("tgkill"), reinterpret_cast<void *>(static_cast<TgkillFn>(tgkill))},
+            {BB_CORE_STR("raise"), reinterpret_cast<void *>(static_cast<RaiseFn>(raise))},
+            {BB_CORE_STR("abort"), reinterpret_cast<void *>(static_cast<AbortFn>(abort))},
+            {BB_CORE_STR("exit"), reinterpret_cast<void *>(static_cast<ExitFn>(exit))},
+            {BB_CORE_STR("_exit"), reinterpret_cast<void *>(static_cast<ExitFn>(_exit))},
+            {BB_CORE_STR("_Exit"), reinterpret_cast<void *>(static_cast<ExitFn>(_Exit))},
     };
 
     int patched = 0;
@@ -5967,9 +5967,9 @@ void installDirectLibcProcMapsHooks() {
         return;
     }
 
-    DlopenFn open_lib = resolveSymbol(&gOrigDlopen, "dlopen");
-    DlsymFn sym = resolveSymbol(&gOrigDlsym, "dlsym");
-    void *libc_handle = open_lib == nullptr ? nullptr : open_lib("libc.so", RTLD_NOW);
+    DlopenFn open_lib = resolveSymbol(&gOrigDlopen, BB_CORE_STR("dlopen"));
+    DlsymFn sym = resolveSymbol(&gOrigDlsym, BB_CORE_STR("dlsym"));
+    void *libc_handle = open_lib == nullptr ? nullptr : open_lib(BB_CORE_STR("libc.so"), RTLD_NOW);
     if (libc_handle == nullptr || sym == nullptr) {
         ALOGD("native direct proc maps open hook skipped: libc handle=%p dlsym=%p errno=%d",
               libc_handle,
@@ -5984,12 +5984,12 @@ void installDirectLibcProcMapsHooks() {
         void *replacement;
     };
     DirectOpenHookSpec specs[] = {
-            {"open", reinterpret_cast<void *>(static_cast<OpenFn>(blackbox_direct_open))},
-            {"open64", reinterpret_cast<void *>(static_cast<OpenFn>(blackbox_direct_open))},
-            {"__open_2", reinterpret_cast<void *>(static_cast<Open2Fn>(blackbox_direct_open_2))},
-            {"openat", reinterpret_cast<void *>(static_cast<OpenAtFn>(blackbox_direct_openat))},
-            {"__openat", reinterpret_cast<void *>(static_cast<OpenAtFn>(blackbox_direct_openat))},
-            {"__openat_2", reinterpret_cast<void *>(static_cast<OpenAt2Fn>(blackbox_direct_openat_2))},
+            {BB_CORE_STR("open"), reinterpret_cast<void *>(static_cast<OpenFn>(blackbox_direct_open))},
+            {BB_CORE_STR("open64"), reinterpret_cast<void *>(static_cast<OpenFn>(blackbox_direct_open))},
+            {BB_CORE_STR("__open_2"), reinterpret_cast<void *>(static_cast<Open2Fn>(blackbox_direct_open_2))},
+            {BB_CORE_STR("openat"), reinterpret_cast<void *>(static_cast<OpenAtFn>(blackbox_direct_openat))},
+            {BB_CORE_STR("__openat"), reinterpret_cast<void *>(static_cast<OpenAtFn>(blackbox_direct_openat))},
+            {BB_CORE_STR("__openat_2"), reinterpret_cast<void *>(static_cast<OpenAt2Fn>(blackbox_direct_openat_2))},
     };
 
     int patched = 0;

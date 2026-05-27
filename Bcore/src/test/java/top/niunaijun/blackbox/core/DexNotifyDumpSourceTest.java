@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsJniNativeMethod;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
@@ -171,7 +172,7 @@ public class DexNotifyDumpSourceTest {
         assertTrue("NativeCore should expose the termination-only seccomp bridge",
                 nativeCore.contains("native void installTerminationOnlySeccompShield()"));
         assertTrue("BoxCore should register the termination-only seccomp bridge",
-                boxCore.contains("{\"installTerminationOnlySeccompShield\"")
+                containsJniNativeMethod(boxCore, "installTerminationOnlySeccompShield")
                         && boxCore.contains("blackbox::seccomp::installTerminationOnlySeccompShield()"));
         assertTrue("SeccompShield should implement a separate termination-only installer",
                 seccomp.contains("void installTerminationOnlySeccompShield()")

@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.4.1)
+project(pine)
+include(CheckCXXCompilerFlag)
+
+check_cxx_compiler_flag("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." PINE_HAS_FILE_PREFIX_MAP)
+if (PINE_HAS_FILE_PREFIX_MAP)
+    set(PINE_PREFIX_MAP_FLAG "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+else()
+    set(PINE_PREFIX_MAP_FLAG "-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=.")
+endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(LINKER_FLAGS "-ffixed-x18 -Wl,--hash-style=both")
@@ -43,6 +52,14 @@ else()
 endif()
 
 add_library(pine SHARED ${PINE_SOURCES})
+
+target_compile_options(pine PRIVATE
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden
+        ${PINE_PREFIX_MAP_FLAG})
+
+set_target_properties(pine PROPERTIES
+        LINK_FLAGS "-Wl,--strip-all -Wl,--exclude-libs,ALL -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/pine.exports.map -Wl,-soname,libpine.so")
 
 if (NOT DEFINED PINE_LOGCAT_ENABLED)
     set(PINE_LOGCAT_ENABLED 1)

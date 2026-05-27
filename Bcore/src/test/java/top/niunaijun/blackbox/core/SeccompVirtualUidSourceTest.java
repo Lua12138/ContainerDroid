@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsJniNativeMethod;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class SeccompVirtualUidSourceTest {
@@ -20,7 +21,7 @@ public class SeccompVirtualUidSourceTest {
         assertTrue("NativeCore should expose a native virtual uid configuration method",
                 nativeCore.contains("native void setVirtualUid(int virtualUid)"));
         assertTrue("BoxCore should register the setVirtualUid JNI method",
-                boxCore.contains("{\"setVirtualUid\",")
+                containsJniNativeMethod(boxCore, "setVirtualUid")
                         && boxCore.contains("blackbox::seccomp::setVirtualUid(virtualUid)"));
     }
 

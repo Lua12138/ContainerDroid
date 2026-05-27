@@ -207,7 +207,7 @@ void* ElfImg::GetModuleBase(const char* name) {
     // Pine changed: Use bool to instead of int
     bool found = false;
     // Pine changed: add "e" to mode
-    maps = WrappedFOpen("/proc/self/maps", "re");
+    maps = WrappedFOpen(PINE_STR("/proc/self/maps"), PINE_STR("re"));
     while (fgets(buff, sizeof(buff), maps)) {
         if (strstr(buff, name) && (strstr(buff, "r-xp") || strstr(buff, "r--p"))) {
             found = true;

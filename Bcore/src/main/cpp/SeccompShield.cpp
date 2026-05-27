@@ -1,5 +1,6 @@
 #include "SeccompShield.h"
 #include "Utils/NativeProperty.h"
+#include "Utils/XorString.h"
 
 #include <android/log.h>
 #include <dirent.h>
@@ -29,11 +30,19 @@
 
 #include <atomic>
 
+#ifndef BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+#define BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED 1
+#endif
+
+#if !BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+#define __android_log_print(...) ((void) 0)
+#endif
+
 namespace blackbox {
 namespace seccomp {
 namespace {
 
-constexpr const char *kSeccompTag = "BlackBoxSeccomp";
+#define kSeccompTag BB_CORE_STR("BlackBoxSeccomp")
 constexpr uint32_t kMaxTrapEvents = 8;
 constexpr uint32_t kMaxFrames = 16;
 constexpr uint32_t kSlotFree = 0;
@@ -356,7 +365,7 @@ static bool parseNamedSignalMask(const char *status, const char *name, unsigned 
 }
 
 static bool parseTracerPid(const char *status, pid_t *tracer_pid) {
-    const char *line = findStatusLine(status, "TracerPid:");
+    const char *line = findStatusLine(status, BB_CORE_STR("TracerPid:"));
     if (line == nullptr) {
         return false;
     }
@@ -397,12 +406,12 @@ static bool readStatusFile(const char *path, char *buffer, size_t buffer_size) {
 
 static bool readThreadStatus(pid_t tid, char *buffer, size_t buffer_size) {
     char path[64];
-    snprintf(path, sizeof(path), "/proc/self/task/%d/status", tid);
+    snprintf(path, sizeof(path), BB_CORE_STR("/proc/self/task/%d/status"), tid);
     return readStatusFile(path, buffer, buffer_size);
 }
 
 static bool readProcessStatus(char *buffer, size_t buffer_size) {
-    return readStatusFile("/proc/self/status", buffer, buffer_size);
+    return readStatusFile(BB_CORE_STR("/proc/self/status"), buffer, buffer_size);
 }
 
 static void scanTracerPid() {
@@ -419,7 +428,7 @@ static void scanTracerPid() {
     pid_t previous = gLastTracerPid.exchange(tracer_pid);
     if (previous != tracer_pid) {
         __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
-                            "TracerPid changed previous=%d current=%d",
+                            BB_CORE_STR("TracerPid changed previous=%d current=%d"),
                             previous, tracer_pid);
     }
 }
@@ -499,7 +508,7 @@ static bool hasSeenTid(const pid_t *seen_tids, size_t seen_count, pid_t tid) {
 }
 
 static void scanThreadSignalMasks() {
-    DIR *dir = opendir("/proc/self/task");
+    DIR *dir = opendir(BB_CORE_STR("/proc/self/task"));
     if (dir == nullptr) {
         return;
     }
@@ -570,7 +579,7 @@ static void initializeSignalMaskHooks() {
     gOrigRtSigprocmask = reinterpret_cast<RtSigprocmaskFn>(dlsym(RTLD_NEXT, "rt_sigprocmask"));
     gOrigInternalRtSigprocmask = reinterpret_cast<RtSigprocmaskFn>(dlsym(RTLD_NEXT, "__rt_sigprocmask"));
     __android_log_print(ANDROID_LOG_DEBUG, kSeccompTag,
-                        "signal-mask hooks ready sigprocmask=%p pthread_sigmask=%p rt_sigprocmask=%p __rt_sigprocmask=%p",
+                        BB_CORE_STR("signal-mask hooks ready sigprocmask=%p pthread_sigmask=%p rt_sigprocmask=%p __rt_sigprocmask=%p"),
                         reinterpret_cast<void *>(gOrigSigprocmask),
                         reinterpret_cast<void *>(gOrigPthreadSigmask),
                         reinterpret_cast<void *>(gOrigRtSigprocmask),
@@ -588,7 +597,7 @@ static const sigset_t *sanitizeSignalMaskArgument(const char *api_name, int how,
     }
 
     __android_log_print(ANDROID_LOG_ERROR, kSeccompTag,
-                        "signal-mask sanitize api=%s tid=%ld how=%d removed=%s%s",
+                        BB_CORE_STR("signal-mask sanitize api=%s tid=%ld how=%d removed=%s%s"),
                         api_name,
                         getThreadId(),
                         how,

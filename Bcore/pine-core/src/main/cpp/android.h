@@ -29,7 +29,7 @@ namespace pine {
 
         static void Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, bool disable_hiddenapi_policy_for_platform);
         static void DisableHiddenApiPolicy(bool application, bool platform) {
-            ElfImg handle("libart.so");
+            ElfImg handle(PINE_STR("libart.so"));
             DisableHiddenApiPolicy(&handle, application, platform);
         }
         static bool DisableProfileSaver();
@@ -158,7 +158,7 @@ namespace pine {
     class ScopedSuspendVM {
     public:
         ScopedSuspendVM(void* self) {
-            Android::SuspendVM(this, self, "pine hook method");
+            Android::SuspendVM(this, self, PINE_STR("pine hook method"));
         }
 
         ~ScopedSuspendVM() {

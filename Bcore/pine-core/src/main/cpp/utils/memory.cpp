@@ -46,7 +46,7 @@ void* Memory::AllocUnprotected(size_t size) {
         LOGD("Mapped new memory %p (size %u)", mapped, page_size);
 
     if (!PineConfig::anti_checks)
-        prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, mapped, size, "pine codes");
+        prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, mapped, size, PINE_STR("pine codes"));
 
     memset(mapped, 0, page_size);
     address = reinterpret_cast<uintptr_t>(mapped);

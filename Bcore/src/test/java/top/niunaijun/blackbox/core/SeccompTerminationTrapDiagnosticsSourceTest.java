@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsJniNativeMethod;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
@@ -26,7 +27,7 @@ public class SeccompTerminationTrapDiagnosticsSourceTest {
         assertTrue("NativeCore should expose a Java bridge for the diagnostic trap installer",
                 nativeCore.contains("native void installTerminationTrapSeccompShield()"));
         assertTrue("BoxCore should register the diagnostic trap JNI bridge",
-                boxCore.contains("{\"installTerminationTrapSeccompShield\"")
+                containsJniNativeMethod(boxCore, "installTerminationTrapSeccompShield")
                         && boxCore.contains("blackbox::seccomp::installTerminationTrapSeccompShield()"));
     }
 

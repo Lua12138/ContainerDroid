@@ -36,11 +36,13 @@ bool clearPendingException(JNIEnv *env) {
 }
 
 bool isDetailedFieldDiagnosticsEnabled() {
-    return blackbox::native_property::getBoolJniDiagnostic("debug.blackbox.jni_field_details");
+    return blackbox::native_property::getBoolJniDiagnostic(
+            BB_CORE_STR("debug.blackbox.jni_field_details"));
 }
 
 bool isFieldDiagnosticsEnabled() {
-    return blackbox::native_property::getBoolJniDiagnostic("debug.blackbox.jni_field_diag");
+    return blackbox::native_property::getBoolJniDiagnostic(
+            BB_CORE_STR("debug.blackbox.jni_field_diag"));
 }
 
 std::string jstringToString(JNIEnv *env, jstring value) {
@@ -61,12 +63,14 @@ std::string describeClass(JNIEnv *env, jclass clazz) {
         return "null";
     }
 
-    jclass classClass = env->FindClass("java/lang/Class");
+    jclass classClass = env->FindClass(BB_CORE_STR("java/lang/Class"));
     if (classClass == nullptr || clearPendingException(env)) {
         return "unavailable";
     }
 
-    jmethodID getName = env->GetMethodID(classClass, "getName", "()Ljava/lang/String;");
+    jmethodID getName = env->GetMethodID(classClass,
+                                         BB_CORE_STR("getName"),
+                                         BB_CORE_STR("()Ljava/lang/String;"));
     if (getName == nullptr || clearPendingException(env)) {
         env->DeleteLocalRef(classClass);
         return "unavailable";
@@ -96,13 +100,13 @@ std::string formatObjectIdentity(JNIEnv *env, jobject object) {
     std::string className = describeClass(env, objectClass);
     env->DeleteLocalRef(objectClass);
 
-    jclass systemClass = env->FindClass("java/lang/System");
+    jclass systemClass = env->FindClass(BB_CORE_STR("java/lang/System"));
     if (systemClass == nullptr || clearPendingException(env)) {
         return className;
     }
     jmethodID identityHashCode = env->GetStaticMethodID(systemClass,
-                                                        "identityHashCode",
-                                                        "(Ljava/lang/Object;)I");
+                                                        BB_CORE_STR("identityHashCode"),
+                                                        BB_CORE_STR("(Ljava/lang/Object;)I"));
     if (identityHashCode == nullptr || clearPendingException(env)) {
         env->DeleteLocalRef(systemClass);
         return className;
@@ -124,13 +128,13 @@ std::string describeClassLoader(JNIEnv *env, jclass clazz) {
         return "null";
     }
 
-    jclass classClass = env->FindClass("java/lang/Class");
+    jclass classClass = env->FindClass(BB_CORE_STR("java/lang/Class"));
     if (classClass == nullptr || clearPendingException(env)) {
         return "unavailable";
     }
     jmethodID getClassLoader = env->GetMethodID(classClass,
-                                                "getClassLoader",
-                                                "()Ljava/lang/ClassLoader;");
+                                                BB_CORE_STR("getClassLoader"),
+                                                BB_CORE_STR("()Ljava/lang/ClassLoader;"));
     if (getClassLoader == nullptr || clearPendingException(env)) {
         env->DeleteLocalRef(classClass);
         return "unavailable";
@@ -197,13 +201,13 @@ std::string describeDeclaredFields(JNIEnv *env, jclass clazz, const char *reques
         return "null";
     }
 
-    jclass classClass = env->FindClass("java/lang/Class");
+    jclass classClass = env->FindClass(BB_CORE_STR("java/lang/Class"));
     if (classClass == nullptr || clearPendingException(env)) {
         return "unavailable";
     }
     jmethodID getDeclaredFields = env->GetMethodID(classClass,
-                                                   "getDeclaredFields",
-                                                   "()[Ljava/lang/reflect/Field;");
+                                                   BB_CORE_STR("getDeclaredFields"),
+                                                   BB_CORE_STR("()[Ljava/lang/reflect/Field;"));
     if (getDeclaredFields == nullptr || clearPendingException(env)) {
         env->DeleteLocalRef(classClass);
         return "unavailable";
@@ -214,15 +218,21 @@ std::string describeDeclaredFields(JNIEnv *env, jclass clazz, const char *reques
         return "unavailable";
     }
 
-    jclass fieldClass = env->FindClass("java/lang/reflect/Field");
+    jclass fieldClass = env->FindClass(BB_CORE_STR("java/lang/reflect/Field"));
     if (fieldClass == nullptr || clearPendingException(env)) {
         env->DeleteLocalRef(fields);
         env->DeleteLocalRef(classClass);
         return "unavailable";
     }
-    jmethodID fieldGetName = env->GetMethodID(fieldClass, "getName", "()Ljava/lang/String;");
-    jmethodID fieldGetType = env->GetMethodID(fieldClass, "getType", "()Ljava/lang/Class;");
-    jmethodID fieldGetModifiers = env->GetMethodID(fieldClass, "getModifiers", "()I");
+    jmethodID fieldGetName = env->GetMethodID(fieldClass,
+                                              BB_CORE_STR("getName"),
+                                              BB_CORE_STR("()Ljava/lang/String;"));
+    jmethodID fieldGetType = env->GetMethodID(fieldClass,
+                                              BB_CORE_STR("getType"),
+                                              BB_CORE_STR("()Ljava/lang/Class;"));
+    jmethodID fieldGetModifiers = env->GetMethodID(fieldClass,
+                                                   BB_CORE_STR("getModifiers"),
+                                                   BB_CORE_STR("()I"));
     if (fieldGetName == nullptr || fieldGetType == nullptr || fieldGetModifiers == nullptr
         || clearPendingException(env)) {
         env->DeleteLocalRef(fieldClass);

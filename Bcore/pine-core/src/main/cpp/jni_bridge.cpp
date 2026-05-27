@@ -5,6 +5,7 @@
 #include "jni_bridge.h"
 #include "utils/macros.h"
 #include "utils/scoped_local_ref.h"
+#include "utils/xor_string.h"
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env;
@@ -13,7 +14,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     }
 
     {
-        ScopedLocalClassRef Pine(env, "top/canyie/pine/Pine");
+        ScopedLocalClassRef Pine(env, PINE_STR("top/canyie/pine/Pine"));
         if (UNLIKELY(Pine.IsNull())) {
             return JNI_ERR;
         }
@@ -23,7 +24,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     }
 
     {
-        ScopedLocalClassRef Ruler(env, "top/canyie/pine/Ruler");
+        ScopedLocalClassRef Ruler(env, PINE_STR("top/canyie/pine/Ruler"));
         if (UNLIKELY(Ruler.IsNull())) {
             return JNI_ERR;
         }

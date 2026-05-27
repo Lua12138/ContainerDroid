@@ -143,29 +143,29 @@ void UnixFileSystemHook::init(JNIEnv *env) {
         return;
     }
     if (BoxCore::getApiLevel() >= 35) {
-        Hook(env, clazz, "canonicalize0", "(Ljava/lang/String;Z)Ljava/lang/String;",
+        Hook(env, clazz, BB_CORE_STR("canonicalize0"), BB_CORE_STR("(Ljava/lang/String;Z)Ljava/lang/String;"),
              (void *) new_canonicalize0_v35, (void **) (&orig_canonicalize0_v35));
     } else {
-        Hook(env, clazz, "canonicalize0", "(Ljava/lang/String;)Ljava/lang/String;",
+        Hook(env, clazz, BB_CORE_STR("canonicalize0"), BB_CORE_STR("(Ljava/lang/String;)Ljava/lang/String;"),
              (void *) new_canonicalize0, (void **) (&orig_canonicalize0));
     }
-    Hook(env, clazz, "getBooleanAttributes0", "(Ljava/lang/String;)I",
+    Hook(env, clazz, BB_CORE_STR("getBooleanAttributes0"), BB_CORE_STR("(Ljava/lang/String;)I"),
          (void *) new_getBooleanAttributes0, (void **) (&orig_getBooleanAttributes0));
-    Hook(env, clazz, "getLastModifiedTime0", "(Ljava/io/File;)J",
+    Hook(env, clazz, BB_CORE_STR("getLastModifiedTime0"), BB_CORE_STR("(Ljava/io/File;)J"),
          (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0));
-    Hook(env, clazz, "setPermission0", "(Ljava/io/File;IZZ)Z",
+    Hook(env, clazz, BB_CORE_STR("setPermission0"), BB_CORE_STR("(Ljava/io/File;IZZ)Z"),
          (void *) new_setPermission0, (void **) (&orig_setPermission0));
-    Hook(env, clazz, "createFileExclusively0", "(Ljava/lang/String;)Z",
+    Hook(env, clazz, BB_CORE_STR("createFileExclusively0"), BB_CORE_STR("(Ljava/lang/String;)Z"),
          (void *) new_createFileExclusively0, (void **) (&orig_createFileExclusively0));
-    Hook(env, clazz, "list0", "(Ljava/io/File;)[Ljava/lang/String;",
+    Hook(env, clazz, BB_CORE_STR("list0"), BB_CORE_STR("(Ljava/io/File;)[Ljava/lang/String;"),
          (void *) new_list0, (void **) (&orig_list0));
-    Hook(env, clazz, "createDirectory0", "(Ljava/io/File;)Z",
+    Hook(env, clazz, BB_CORE_STR("createDirectory0"), BB_CORE_STR("(Ljava/io/File;)Z"),
          (void *) new_createDirectory0, (void **) (&orig_createDirectory0));
-    Hook(env, clazz, "setLastModifiedTime0", "(Ljava/io/File;J)Z",
+    Hook(env, clazz, BB_CORE_STR("setLastModifiedTime0"), BB_CORE_STR("(Ljava/io/File;J)Z"),
          (void *) new_setLastModifiedTime0, (void **) (&orig_setLastModifiedTime0));
-    Hook(env, clazz, "setReadOnly0", "(Ljava/io/File;)Z",
+    Hook(env, clazz, BB_CORE_STR("setReadOnly0"), BB_CORE_STR("(Ljava/io/File;)Z"),
          (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0));
-    Hook(env, clazz, "getSpace0", "(Ljava/io/File;I)J",
+    Hook(env, clazz, BB_CORE_STR("getSpace0"), BB_CORE_STR("(Ljava/io/File;I)J"),
          (void *) new_getSpace0, (void **) (&orig_getSpace0));
     env->DeleteLocalRef(clazz);
 }

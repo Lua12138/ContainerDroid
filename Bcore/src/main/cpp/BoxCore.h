@@ -6,8 +6,9 @@
 #define VIRTUALM_VMCORE_H
 
 #include <jni.h>
+#include "Utils/XorString.h"
 
-#define VMCORE_CLASS "top/niunaijun/blackbox/core/NativeCore"
+#define VMCORE_CLASS BB_CORE_STR("top/niunaijun/blackbox/core/NativeCore")
 
 class BoxCore {
 public:

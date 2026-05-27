@@ -24,10 +24,10 @@ void Jit::Init(const ElfImg* art_lib_handle, const ElfImg* jit_lib_handle) {
         return; // JIT API is unavailable in Android R
     }
     global_compiler_ptr = static_cast<JitCompiler**>(art_lib_handle->GetSymbolAddress(
-            "_ZN3art3jit3Jit20jit_compiler_handle_E"));
+            PINE_STR("_ZN3art3jit3Jit20jit_compiler_handle_E")));
 
     auto jit_load = reinterpret_cast<JitCompiler* (*)(bool*)>(jit_lib_handle->GetSymbolAddress(
-            "jit_load"));
+            PINE_STR("jit_load")));
 
     if (LIKELY(jit_load)) {
         bool generate_debug_info = false;
@@ -37,14 +37,14 @@ void Jit::Init(const ElfImg* art_lib_handle, const ElfImg* jit_lib_handle) {
     }
 
     // FIXME: jit_compile_method doesn't exist in Android R
-    void* jit_compile_method = jit_lib_handle->GetSymbolAddress("jit_compile_method");
+    void* jit_compile_method = jit_lib_handle->GetSymbolAddress(PINE_STR("jit_compile_method"));
 
     if (Android::version >= Android::kQ) {
         Jit::jit_compile_method_q = reinterpret_cast<bool (*)(void*, void*, void*, bool, bool)>(jit_compile_method);
         // Android Q, ART may update CompilerOptions and the value we set will be overwritten.
         // the function pointer saved in art::jit::Jit::jit_update_options_ .
         Jit::jit_update_options_ptr = static_cast<void**>(art_lib_handle->GetSymbolAddress(
-                "_ZN3art3jit3Jit19jit_update_options_E"));
+                PINE_STR("_ZN3art3jit3Jit19jit_update_options_E")));
     } else {
         Jit::jit_compile_method = reinterpret_cast<bool (*)(void*, void*, void*, bool)>(jit_compile_method);
     }

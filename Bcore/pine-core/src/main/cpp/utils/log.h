@@ -6,7 +6,9 @@
 #define PINE_LOG_H
 
 #include <android/log.h>
+#include <cstdarg>
 #include <cstdlib>
+#include "xor_string.h"
 
 #ifndef PINE_LOGCAT_ENABLED
 #define PINE_LOGCAT_ENABLED 1
@@ -16,13 +18,22 @@
 #include "../pine_config.h"
 #endif
 
-#define LOG_TAG "Pine"
+#define LOG_TAG PINE_STR("Pine")
 
 #if PINE_LOGCAT_ENABLED
+namespace pine {
+inline void logPrint(int priority, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    __android_log_vprint(priority, LOG_TAG, format, args);
+    va_end(args);
+}
+}
+
 #define PINE_LOG_IF_ENABLED(priority, ...) \
 do { \
     if (::pine::PineConfig::debug) { \
-        __android_log_print(priority, LOG_TAG, __VA_ARGS__); \
+        ::pine::logPrint(priority, __VA_ARGS__); \
     } \
 } while (false)
 
@@ -31,7 +42,7 @@ do { \
 #define LOGI(...) PINE_LOG_IF_ENABLED(ANDROID_LOG_INFO, __VA_ARGS__)
 #define LOGW(...) PINE_LOG_IF_ENABLED(ANDROID_LOG_WARN, __VA_ARGS__)
 #define LOGE(...) PINE_LOG_IF_ENABLED(ANDROID_LOG_ERROR, __VA_ARGS__)
-#define LOGF(...) __android_log_print(ANDROID_LOG_FATAL, LOG_TAG, __VA_ARGS__)
+#define LOGF(...) ::pine::logPrint(ANDROID_LOG_FATAL, __VA_ARGS__)
 #else
 #define PINE_LOG_IF_ENABLED(priority, ...) ((void) 0)
 #define LOGV(...) ((void) 0)
@@ -45,14 +56,14 @@ do { \
 #define FATAL(...) \
 do {\
     LOGF(__VA_ARGS__); \
-    LOGF("Aborting..."); \
+    LOGF(PINE_STR("Aborting...")); \
     abort(); \
 } while (false)
 
 #define CHECK(cond, ...) \
 do { \
     if (UNLIKELY(!(cond))) {\
-        LOGF("%s#%d: Check failed: %s", __FILE__, __LINE__, #cond);\
+        LOGF(PINE_STR("Check failed"));\
         FATAL(__VA_ARGS__); \
     }\
 } while(false)

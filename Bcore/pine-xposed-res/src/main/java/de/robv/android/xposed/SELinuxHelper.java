@@ -1,7 +1,6 @@
 package de.robv.android.xposed;
 
 import android.os.SELinux;
-import android.system.OsConstants;
 import android.util.Log;
 
 import java.io.FileInputStream;
@@ -17,6 +16,8 @@ import top.canyie.dreamland.utils.IOUtils;
  */
 public final class SELinuxHelper {
     public static final String TAG = "SELinuxHelper";
+    private static final int ERRNO_EPERM = 1;
+    private static final int ERRNO_EACCES = 13;
 
     private static boolean sIsSELinuxEnabled = false;
     // Dreamland changed: Only supports DirectAccessService
@@ -65,7 +66,7 @@ public final class SELinuxHelper {
             }
         } catch (IOException e) {
             int errno = IOUtils.getErrno(e);
-            if (errno == OsConstants.EACCES || errno == OsConstants.EPERM) {
+            if (errno == ERRNO_EACCES || errno == ERRNO_EPERM) {
                 // Status file is existing but cannot read, blocked by SELinux?
                 Log.w(TAG, "Read /sys/fs/selinux/enforce failed: permission denied.");
                 return true;

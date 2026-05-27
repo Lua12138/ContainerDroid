@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.core;
 import org.junit.Test;
 
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeString;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class RuntimeFeatureSwitchSourceTest {
@@ -93,7 +94,8 @@ public class RuntimeFeatureSwitchSourceTest {
                         && pineLog.contains("#define LOGI(...) PINE_LOG_IF_ENABLED"));
         assertTrue("Native Pine init should receive the Java diagnostic switch before emitting logs",
                 pineNative.indexOf("PineConfig::debug = static_cast<bool>(debug);")
-                        < pineNative.indexOf("LOGI(\"Pine native init...\")"));
+                        < pineNative.indexOf("LOGI(")
+                        && containsNativeString(pineNative, "Pine native init..."));
         assertTrue("Java Pine non-debug warnings/errors should be gated by PineConfig.debug",
                 pineJava.contains("BuildConfig.BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED && PineConfig.debug")
                         && pineJava.contains("Log.w(TAG, \"Android version too high, not tested now...\");")
@@ -144,7 +146,8 @@ public class RuntimeFeatureSwitchSourceTest {
                         && bcoreBuildGradle.contains("-DBLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED="));
         assertTrue("Bcore CMake should convert the Gradle switch into a native compile definition",
                 bcoreCmake.contains("BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
-                        && bcoreCmake.contains("target_compile_definitions(blackbox PRIVATE BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED="));
+                        && bcoreCmake.contains("target_compile_definitions(blackbox PRIVATE")
+                        && bcoreCmake.contains("BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED=${BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED}"));
         assertTrue("Bcore native debug log macros should compile log calls out when diagnostic logcat is disabled",
                 bcoreLog.contains("#if BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED")
                         && bcoreLog.contains("#define log_print_debug(...) ((void) 0)"));

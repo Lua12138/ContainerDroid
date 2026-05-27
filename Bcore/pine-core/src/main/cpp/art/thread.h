@@ -60,9 +60,13 @@ namespace pine::art {
             if (LIKELY(currentThread)) {
                 return nativePeer != nullptr;
             }
-            jclass T = env->FindClass("java/lang/Thread");
-            currentThread = env->GetStaticMethodID(T, "currentThread", "()Ljava/lang/Thread;");
-            nativePeer = env->GetFieldID(T, "nativePeer", Android::version < Android::kL ? "I" : "J");
+            jclass T = env->FindClass(PINE_STR("java/lang/Thread"));
+            currentThread = env->GetStaticMethodID(T,
+                                                   PINE_STR("currentThread"),
+                                                   PINE_STR("()Ljava/lang/Thread;"));
+            nativePeer = env->GetFieldID(T,
+                                         PINE_STR("nativePeer"),
+                                         Android::version < Android::kL ? PINE_STR("I") : PINE_STR("J"));
             if (LIKELY(!env->ExceptionCheck())) {
                 Thread_ = static_cast<jclass>(env->NewGlobalRef(T));
             } else {

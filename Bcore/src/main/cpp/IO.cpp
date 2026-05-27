@@ -43,7 +43,7 @@ const char *IO::redirectPath(const char *__path) {
     list<IO::RelocateInfo>::iterator iterator;
     for (iterator = relocate_rule.begin(); iterator != relocate_rule.end(); ++iterator) {
         IO::RelocateInfo info = *iterator;
-        if (strstr(__path, info.targetPath) && !strstr(__path, "/blackbox/")) {
+        if (strstr(__path, info.targetPath) && !strstr(__path, BB_CORE_STR("/blackbox/"))) {
             char *ret = replace(__path, info.targetPath, info.relocatePath);
             // ALOGD("redirectPath %s  => %s", __path, ret);
             return ret;
@@ -60,8 +60,8 @@ const char *reverseRedirectPathWithAlias(const char *__path, const char *relocat
         return replace(__path, relocatePath, targetPath);
     }
 
-    static const char *kDataUserPrefix = "/data/user/0/";
-    static const char *kDataDataPrefix = "/data/data/";
+    static const char *kDataUserPrefix = BB_CORE_STR("/data/user/0/");
+    static const char *kDataDataPrefix = BB_CORE_STR("/data/data/");
     const char *fromPrefix = nullptr;
     const char *toPrefix = nullptr;
     if (strncmp(relocatePath, kDataUserPrefix, strlen(kDataUserPrefix)) == 0) {
@@ -148,6 +148,8 @@ void IO::addRule(const char *targetPath, const char *relocatePath) {
 }
 
 void IO::init(JNIEnv *env) {
-    jclass tmpFile = env->FindClass("java/io/File");
-    getAbsolutePathMethodId = env->GetMethodID(tmpFile, "getAbsolutePath", "()Ljava/lang/String;");
+    jclass tmpFile = env->FindClass(BB_CORE_STR("java/io/File"));
+    getAbsolutePathMethodId = env->GetMethodID(tmpFile,
+                                               BB_CORE_STR("getAbsolutePath"),
+                                               BB_CORE_STR("()Ljava/lang/String;"));
 }

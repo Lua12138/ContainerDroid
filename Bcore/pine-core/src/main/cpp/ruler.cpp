@@ -10,10 +10,9 @@ void Ruler_m1(JNIEnv*, jclass) {
     LOGI("Don't call me...");
 }
 
-static const JNINativeMethod gMethods[] = {
-        {"m1", "()V", reinterpret_cast<void*>(Ruler_m1)}
-};
-
 bool register_Ruler(JNIEnv* env, jclass Ruler) {
-    return LIKELY(env->RegisterNatives(Ruler, gMethods, NELEM(gMethods)) == JNI_OK);
+    JNINativeMethod methods[] = {
+            {PINE_STR("m1"), PINE_STR("()V"), reinterpret_cast<void*>(Ruler_m1)}
+    };
+    return LIKELY(env->RegisterNatives(Ruler, methods, NELEM(methods)) == JNI_OK);
 }

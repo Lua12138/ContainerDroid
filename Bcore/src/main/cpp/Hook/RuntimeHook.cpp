@@ -28,16 +28,16 @@ extern "C" const char *currentNativeHostPackage();
 
 namespace {
 
-constexpr const char *kDeniedProcVersion = "/proc/version";
-constexpr const char *kDeniedProcMaps = "/proc/self/maps";
-constexpr const char *kDeniedProcMeminfo = "/proc/meminfo";
-constexpr const char *kDeniedProcCmdline = "/proc/%d/cmdline";
-constexpr const char *kDeniedProcComm = "/proc/%d/comm";
-constexpr const char *kProcVersionFdPath = "/dev/fd/94";
-constexpr const char *kProcMapsFdPath = "/dev/fd/93";
-constexpr const char *kProcMeminfoFdPath = "/dev/fd/92";
-constexpr const char *kProcCmdlineFdPath = "/dev/fd/91";
-constexpr const char *kProcCommFdPath = "/dev/fd/90";
+#define kDeniedProcVersion BB_CORE_STR("/proc/version")
+#define kDeniedProcMaps BB_CORE_STR("/proc/self/maps")
+#define kDeniedProcMeminfo BB_CORE_STR("/proc/meminfo")
+#define kDeniedProcCmdline BB_CORE_STR("/proc/%d/cmdline")
+#define kDeniedProcComm BB_CORE_STR("/proc/%d/comm")
+#define kProcVersionFdPath BB_CORE_STR("/dev/fd/94")
+#define kProcMapsFdPath BB_CORE_STR("/dev/fd/93")
+#define kProcMeminfoFdPath BB_CORE_STR("/dev/fd/92")
+#define kProcCmdlineFdPath BB_CORE_STR("/dev/fd/91")
+#define kProcCommFdPath BB_CORE_STR("/dev/fd/90")
 constexpr int kProcVersionFd = 94;
 constexpr int kProcMapsFd = 93;
 constexpr int kProcMeminfoFd = 92;
@@ -45,12 +45,11 @@ constexpr int kProcCmdlineFd = 91;
 constexpr int kProcCommFd = 90;
 constexpr size_t kProcCmdlineMinBytes = 76;
 constexpr size_t kMaxPatchLibrarySize = 16 * 1024 * 1024;
-constexpr const char *kFakeProcVersion =
-        "Linux version 4.19.127-perf-gbb0f387b2ec1 "
-        "(android-build@localhost) #1 SMP PREEMPT\n";
+#define kFakeProcVersion BB_CORE_STR("Linux version 4.19.127-perf-gbb0f387b2ec1 " \
+        "(android-build@localhost) #1 SMP PREEMPT\n")
 
-constexpr const char *kBlackBoxUserMarker = "/blackbox/data/user/";
-constexpr const char *kProcShimProperty = "debug.blackbox.proc_shim";
+#define kBlackBoxUserMarker BB_CORE_STR("/blackbox/data/user/")
+#define kProcShimProperty BB_CORE_STR("debug.blackbox.proc_shim")
 
 struct ProcShimContext {
     char library_path[PATH_MAX];
@@ -96,7 +95,7 @@ bool samePath(const char *left, const char *right) {
 }
 
 bool shouldPrepareProcVersionShim(const char *library_path) {
-    return contains(library_path, "/blackbox/data/user/")
+    return contains(library_path, BB_CORE_STR("/blackbox/data/user/"))
            && contains(library_path, ".so");
 }
 
@@ -248,13 +247,13 @@ bool buildProcShimContext(const char *library_path, ProcShimContext *context) {
     context->virtual_data_root[virtual_root_len] = '\0';
 
     int required = snprintf(context->public_data_root, sizeof(context->public_data_root),
-                            "/data/data/%s", context->package_name);
+                            BB_CORE_STR("/data/data/%s"), context->package_name);
     if (required <= 0 || static_cast<size_t>(required) >= sizeof(context->public_data_root)) {
         return false;
     }
 
     required = snprintf(context->data_user_virtual_root, sizeof(context->data_user_virtual_root),
-                        "/data/user/%s/%s/blackbox/data/user/%s/%s",
+                        BB_CORE_STR("/data/user/%s/%s/blackbox/data/user/%s/%s"),
                         context->host_user_id, context->host_package,
                         context->user_id, context->package_name);
     if (required <= 0 || static_cast<size_t>(required) >= sizeof(context->data_user_virtual_root)) {
@@ -262,7 +261,7 @@ bool buildProcShimContext(const char *library_path, ProcShimContext *context) {
     }
 
     required = snprintf(context->data_data_virtual_root, sizeof(context->data_data_virtual_root),
-                        "/data/data/%s/blackbox/data/user/%s/%s",
+                        BB_CORE_STR("/data/data/%s/blackbox/data/user/%s/%s"),
                         context->host_package, context->user_id, context->package_name);
     return required > 0 && static_cast<size_t>(required) < sizeof(context->data_data_virtual_root);
 }
@@ -286,19 +285,19 @@ std::string sanitizeMapsLine(const char *line, const ProcShimContext &context) {
     replaceAll(&sanitized, context.data_user_virtual_root, context.public_data_root);
     replaceAll(&sanitized, context.data_data_virtual_root, context.public_data_root);
     replaceAll(&sanitized, context.host_package, context.package_name);
-    replaceAll(&sanitized, "/blackbox/data/user/", "/data/user/");
-    replaceAll(&sanitized, "/blackbox/", "/data/");
-    replaceAll(&sanitized, "libblackbox.so", "libandroid_runtime.so");
+    replaceAll(&sanitized, BB_CORE_STR("/blackbox/data/user/"), BB_CORE_STR("/data/user/"));
+    replaceAll(&sanitized, BB_CORE_STR("/blackbox/"), BB_CORE_STR("/data/"));
+    replaceAll(&sanitized, BB_CORE_STR("libblackbox.so"), BB_CORE_STR("libandroid_runtime.so"));
     return sanitized;
 }
 
 bool shouldHideMapsLine(const char *line, const ProcShimContext &context) {
     return contains(line, context.host_package)
-           || contains(line, "libblackbox.so")
-           || contains(line, "libblackhook.so")
-           || contains(line, "libblackdex.so")
-           || contains(line, "libpine.so")
-           || contains(line, "[anon:pine codes]");
+           || contains(line, BB_CORE_STR("libblackbox.so"))
+           || contains(line, BB_CORE_STR("libblackhook.so"))
+           || contains(line, BB_CORE_STR("libblackdex.so"))
+           || contains(line, BB_CORE_STR("libpine.so"))
+           || contains(line, BB_CORE_STR("[anon:pine codes]"));
 }
 
 bool isVirtualAppDataLine(const char *line, const ProcShimContext &context) {
@@ -366,7 +365,7 @@ bool writeFakeCommFile(int fd, const ProcShimContext &context) {
 }
 
 bool writeFakeMeminfoFile(int fd, const ProcShimContext &) {
-    if (copyRealFileToFd("/proc/meminfo", fd)) {
+    if (copyRealFileToFd(BB_CORE_STR("/proc/meminfo"), fd)) {
         return true;
     }
     constexpr const char *fallback =
@@ -386,7 +385,7 @@ FILE *openRealProcMapsFile() {
     if (real_fopen == nullptr) {
         return nullptr;
     }
-    return real_fopen("/proc/self/maps", "re");
+    return real_fopen(BB_CORE_STR("/proc/self/maps"), BB_CORE_STR("re"));
 }
 
 bool writeFakeMapsFile(int fd, const ProcShimContext &context) {
@@ -420,11 +419,11 @@ bool writeFakeMapsFile(int fd, const ProcShimContext &context) {
 }
 
 const ProcPathShim kProcPathShims[] = {
-        {kDeniedProcComm, kProcCommFdPath, ".bb_proc_comm", kProcCommFd, writeFakeCommFile},
-        {kDeniedProcCmdline, kProcCmdlineFdPath, ".bb_proc_cmdline", kProcCmdlineFd, writeFakeCmdlineFile},
-        {kDeniedProcMeminfo, kProcMeminfoFdPath, ".bb_proc_meminfo", kProcMeminfoFd, writeFakeMeminfoFile},
-        {kDeniedProcMaps, kProcMapsFdPath, ".bb_proc_maps", kProcMapsFd, writeFakeMapsFile},
-        {kDeniedProcVersion, kProcVersionFdPath, ".bb_proc_version", kProcVersionFd, writeFakeVersionFile},
+        {kDeniedProcComm, kProcCommFdPath, BB_CORE_STR(".bb_proc_comm"), kProcCommFd, writeFakeCommFile},
+        {kDeniedProcCmdline, kProcCmdlineFdPath, BB_CORE_STR(".bb_proc_cmdline"), kProcCmdlineFd, writeFakeCmdlineFile},
+        {kDeniedProcMeminfo, kProcMeminfoFdPath, BB_CORE_STR(".bb_proc_meminfo"), kProcMeminfoFd, writeFakeMeminfoFile},
+        {kDeniedProcMaps, kProcMapsFdPath, BB_CORE_STR(".bb_proc_maps"), kProcMapsFd, writeFakeMapsFile},
+        {kDeniedProcVersion, kProcVersionFdPath, BB_CORE_STR(".bb_proc_version"), kProcVersionFd, writeFakeVersionFile},
 };
 
 bool buildProcShimFilePath(const ProcPathShim &shim, const ProcShimContext &context,
@@ -709,15 +708,15 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
 }
 
 void RuntimeHook::init(JNIEnv *env) {
-    const char *className = "java/lang/Runtime";
+    const char *className = BB_CORE_STR("java/lang/Runtime");
     if (BoxCore::getApiLevel() >= __ANDROID_API_Q__) {
-        JniHook::HookJniFun(env, className, "nativeLoad",
-                            "(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/Class;)Ljava/lang/String;",
+        JniHook::HookJniFun(env, className, BB_CORE_STR("nativeLoad"),
+                            BB_CORE_STR("(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/Class;)Ljava/lang/String;"),
                             (void *) new_nativeLoad2,
                             (void **) (&orig_nativeLoad2), true);
     } else {
-        JniHook::HookJniFun(env, className, "nativeLoad",
-                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/String;",
+        JniHook::HookJniFun(env, className, BB_CORE_STR("nativeLoad"),
+                            BB_CORE_STR("(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/String;"),
                             (void *) new_nativeLoad,
                             (void **) (&orig_nativeLoad), true);
     }

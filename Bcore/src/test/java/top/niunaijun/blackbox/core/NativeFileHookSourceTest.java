@@ -4,6 +4,9 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsJniNativeMethod;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeString;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeStringAfterPrefix;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
@@ -70,13 +73,15 @@ public class NativeFileHookSourceTest {
                 source.contains("installDirectLibcTerminationHooks")
                         && source.contains("resolvePineNativeInlineHookFuncNoBackup")
                         && source.contains("PineNativeInlineHookFuncNoBackup")
-                        && source.contains("open_lib(\"libpine.so\", RTLD_NOW)")
-                        && source.contains("open_lib(\"libc.so\", RTLD_NOW)")
+                        && containsNativeString(source, "bbp_ih0")
+                        && source.contains("open_lib(")
+                        && containsNativeString(source, "libpine.so")
+                        && containsNativeString(source, "libc.so")
                         && source.contains("sym(libc_handle, spec.symbol)")
                         && source.contains("hook_func(real_symbol, spec.replacement)")
-                        && source.contains("\"kill\"")
-                        && source.contains("\"tgkill\"")
-                        && source.contains("\"_exit\""));
+                        && containsNativeString(source, "kill")
+                        && containsNativeString(source, "tgkill")
+                        && containsNativeString(source, "_exit"));
         assertFalse("Bionic's libc syscall entry can be a special stub that Pine no-backup inline hooking corrupts; keep syscall coverage in the wrapper/PLT path, not the direct libc entry patch",
                 directSpecs.contains("{\"syscall\""));
         assertTrue("Non-blocking termination diagnostics should install direct libc termination hooks so self-exit callers can be logged without enabling the termination shield",
@@ -293,10 +298,10 @@ public class NativeFileHookSourceTest {
                 "extern \"C\" FILE *fopen(");
 
         assertTrue("__open_2 must call the resolved libc function pointer; calling open(path, flags) is fortified back into __open_2 and recurses",
-                open2.contains("resolveSymbol(&gOrigOpen2, \"__open_2\")")
+                containsNativeStringAfterPrefix(open2, "resolveSymbol(&gOrigOpen2, ", "__open_2")
                         && !open2.contains("return open(pathname, flags);"));
         assertTrue("__openat_2 must call the resolved libc function pointer; calling openat(dirfd, path, flags) is fortified back into __openat_2 and recurses",
-                openat2.contains("resolveSymbol(&gOrigOpenAt2, \"__openat_2\")")
+                containsNativeStringAfterPrefix(openat2, "resolveSymbol(&gOrigOpenAt2, ", "__openat_2")
                         && !openat2.contains("return openat(dirfd, pathname, flags);"));
     }
 
@@ -363,9 +368,12 @@ public class NativeFileHookSourceTest {
                         && source.contains("caller >= start && caller < end")
                         && source.contains("map_offset + (caller - start)"));
         assertTrue("File/proc probe wrappers should pass the protected caller address, not only the hook wrapper address",
-                source.contains("logOpenPath(\"fopen\", pathname, redirected, 0, result == nullptr ? -1 : 0, __builtin_return_address(0))")
-                        && source.contains("logOpenPath(\"open\", pathname, redirected, flags, result, __builtin_return_address(0))")
-                        && source.contains("logOpenPath(\"syscall.openat\", resolved_log.path, redirected_log, static_cast<int>(args[2]), result, __builtin_return_address(0))"));
+                containsNativeStringAfterPrefix(source, "logOpenPath(", "fopen")
+                        && source.contains("pathname, redirected, 0, result == nullptr ? -1 : 0, __builtin_return_address(0))")
+                        && containsNativeStringAfterPrefix(source, "logOpenPath(", "open")
+                        && source.contains("pathname, redirected, flags, result, __builtin_return_address(0))")
+                        && containsNativeStringAfterPrefix(source, "logOpenPath(", "syscall.openat")
+                        && source.contains("resolved_log.path, redirected_log, static_cast<int>(args[2]), result, __builtin_return_address(0))"));
     }
 
     @Test
@@ -447,8 +455,8 @@ public class NativeFileHookSourceTest {
         assertTrue("Android 32-bit SYS_statfs64 has path, size, and result-buffer arguments; dropping the third argument returns EFAULT",
                 source.contains("case __NR_statfs64:\n            return 3;"));
         assertTrue("Native filesystem metadata diagnostics should be visible for app-data paths",
-                source.contains("logStatPath(\"statfs\"")
-                        && source.contains("logStatPath(\"syscall.statfs64\""));
+                containsNativeStringAfterPrefix(source, "logStatPath(", "statfs")
+                        && containsNativeStringAfterPrefix(source, "logStatPath(", "syscall.statfs64"));
     }
 
     @Test
@@ -595,7 +603,8 @@ public class NativeFileHookSourceTest {
                         && nativeFileHook.contains("setNativeSandboxEnvironment(const char *package_name,")
                         && nativeFileHook.contains("const char *host_package)")
                         && nativeCore.contains("native void setNativeSandboxEnvironment(String packageName, String processName, String hostPackageName)")
-                        && boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V\"")
+                        && containsJniNativeMethod(boxCore, "setNativeSandboxEnvironment")
+                        && containsNativeString(boxCore, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V")
                         && activityThread.contains("NativeCore.setNativeSandboxEnvironment(packageName, processName, BlackBoxCore.getHostPkg());"));
         assertTrue("The status Name field should be rewritten to Android's task-comm-sized virtual process suffix, preserving real procfs formatting while hiding the host p0 stub.",
                 nativeFileHook.contains("linuxTaskCommForProcessName")
@@ -756,6 +765,9 @@ public class NativeFileHookSourceTest {
         int configurePackage = source.indexOf("setNativeSandboxEnvironmentInternal");
         int prepareEarly = source.indexOf("prepareEarlyProcMapsShim(package_name)", configurePackage);
         int redirectMaps = source.indexOf("isCurrentProcessProcPath(pathname, \"maps\")");
+        if (redirectMaps < 0) {
+            redirectMaps = source.indexOf("isCurrentProcessProcPath(pathname, BB_CORE_STR(\"maps\"))");
+        }
 
         assertTrue("Package-scoped native setup should seed a proc maps shim before protected Runtime.nativeLoad runs",
                 configurePackage >= 0 && prepareEarly > configurePackage);
@@ -767,9 +779,9 @@ public class NativeFileHookSourceTest {
                         && source.contains("openRealProcMapsFile"));
         assertTrue("Early maps sanitizer should hide sandbox runtime and hook mappings before fd93 is prepared by RuntimeHook",
                 source.contains("shouldHideEarlyMapsLine")
-                        && source.contains("libblackbox.so")
-                        && source.contains("libpine.so")
-                        && source.contains("[anon:pine codes]"));
+                        && containsNativeString(source, "libblackbox.so")
+                        && containsNativeString(source, "libpine.so")
+                        && containsNativeString(source, "[anon:pine codes]"));
         assertTrue("Direct /proc/self/maps redirects should use the early snapshot without rewriting it on every read, then refresh only after the protected shim takes over",
                 redirectMaps >= 0
                         && source.contains("refreshProcMapsShimForRedirect")
@@ -969,7 +981,9 @@ public class NativeFileHookSourceTest {
                         && writer.contains("writeExact(fd, sanitized.data(), sanitized.size())"));
         assertTrue("Default open path should select the stronger app-visible maps only for app-owned native callers; otherwise keep the public path-only maps view",
                 source.contains("const bool app_visible = shouldUseAppVisibleProcMapsForCaller(caller)")
-                        && source.contains("app_visible ? \"bb_proc_maps_app\" : \"bb_proc_maps_public\"")
+                        && source.contains("app_visible ?")
+                        && containsNativeString(source, "bb_proc_maps_app")
+                        && containsNativeString(source, "bb_proc_maps_public")
                         && source.contains("app_visible ? writeAppVisibleProcMapsFile(fd) : writeProcMapsPathOnlyFile(fd)"));
     }
 
@@ -1008,11 +1022,11 @@ public class NativeFileHookSourceTest {
                 "Bcore/src/main/cpp/Hook/NativeFileHook.cpp");
 
         assertTrue("Default path-only maps fds should use a recognizable memfd name for generic fd metadata sanitization",
-                source.contains("bb_proc_maps_public"));
+                containsNativeString(source, "bb_proc_maps_public"));
         assertTrue("readlink(/proc/self/fd/N) for a virtual maps memfd should report /proc/self/maps, not a memfd backing name",
                 source.contains("isVirtualProcMapsFdTarget")
                         && source.contains("virtualProcMapsReadlinkTarget")
-                        && source.contains("return \"/proc/self/maps\""));
+                        && containsNativeString(source, "/proc/self/maps"));
         assertTrue("fstat on a virtual maps memfd should look like procfs metadata instead of a sized memfd",
                 source.contains("isVirtualProcMapsFd")
                         && source.contains("maybeSanitizeProcMapsFdStat")
@@ -1173,7 +1187,7 @@ public class NativeFileHookSourceTest {
                         && nativeFileHook.contains("close(kProcMapsFd)"));
         assertTrue("NativeCore should expose and register the early maps disable native bridge",
                 nativeCore.contains("native void disableEarlyProcMapsShim()")
-                        && boxCore.contains("{\"disableEarlyProcMapsShim\",")
+                        && containsJniNativeMethod(boxCore, "disableEarlyProcMapsShim")
                         && boxCore.contains("disableEarlyProcMapsShim()"));
 
         int makeApplication = activityThread.indexOf("BRLoadedApk.getWithException(loadedApk).makeApplication(false, null)");
@@ -1215,7 +1229,7 @@ public class NativeFileHookSourceTest {
                         && source.contains("resolveOpenAtPathForLog")
                         && source.contains("native file probe"));
         assertTrue("syscall(openat) diagnostics should use the same resolved /proc path evidence",
-                source.contains("logOpenPath(\"syscall.openat\"")
+                containsNativeStringAfterPrefix(source, "logOpenPath(", "syscall.openat")
                         && source.contains("resolved_log.path"));
         assertTrue("opendir diagnostics should stay focused on /proc, APK, and app-data probes",
                 source.contains("native dir probe")
@@ -1233,7 +1247,9 @@ public class NativeFileHookSourceTest {
                 source.contains("HOOK_JNI(jint, getBooleanAttributes0")
                         && source.contains("IO::redirectPath(env, abspath)"));
         assertTrue("UnixFileSystemHook should install the getBooleanAttributes0(String) hook through the method lookup wrapper",
-                source.contains("Hook(env, clazz, \"getBooleanAttributes0\", \"(Ljava/lang/String;)I\""));
+                source.contains("Hook(env, clazz,")
+                        && containsNativeString(source, "getBooleanAttributes0")
+                        && containsNativeString(source, "(Ljava/lang/String;)I"));
         assertTrue("UnixFileSystemHook should preserve the original getBooleanAttributes0 entrypoint",
                 source.contains("(void *) new_getBooleanAttributes0")
                         && source.contains("(void **) (&orig_getBooleanAttributes0)"));
@@ -1330,8 +1346,10 @@ public class NativeFileHookSourceTest {
         assertTrue("Native termination suppression should log the original caller address for IDA correlation",
                 source.contains("caller=%p")
                         && source.contains("__builtin_return_address(0)")
-                        && source.contains("logNativeTerminationBlocked(\"kill\", pid, signal, 0, __builtin_return_address(0))")
-                        && source.contains("logNativeTerminationBlocked(\"syscall.tgkill\", args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0))"));
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationBlocked(", "kill")
+                        && source.contains("pid, signal, 0, __builtin_return_address(0))")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationBlocked(", "syscall.tgkill")
+                        && source.contains("args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0))"));
     }
 
     @Test
@@ -1350,14 +1368,21 @@ public class NativeFileHookSourceTest {
                         && source.contains("resolveCallerLocation")
                         && source.contains("_Unwind_Backtrace"));
         assertTrue("libc kill/tgkill/exit wrappers should emit non-blocking probe telemetry before delegating",
-                source.contains("logNativeTerminationProbe(\"kill\", pid, signal, 0, __builtin_return_address(0), currentStackPointer());")
-                        && source.contains("logNativeTerminationProbe(\"tgkill\", tid, signal, 0, __builtin_return_address(0), currentStackPointer());")
-                        && source.contains("logNativeTerminationProbe(\"exit\", getpid(), 0, status, __builtin_return_address(0), currentStackPointer());")
-                        && source.contains("logNativeTerminationProbe(\"_exit\", getpid(), 0, status, __builtin_return_address(0), currentStackPointer());"));
+                containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "kill")
+                        && source.contains("pid, signal, 0, __builtin_return_address(0), currentStackPointer());")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "tgkill")
+                        && source.contains("tid, signal, 0, __builtin_return_address(0), currentStackPointer());")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "exit")
+                        && source.contains("getpid(), 0, status, __builtin_return_address(0), currentStackPointer());")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "_exit")
+                        && source.contains("getpid(), 0, status, __builtin_return_address(0), currentStackPointer());"));
         assertTrue("raw libc syscall termination paths should also emit non-blocking probe telemetry",
-                source.contains("logNativeTerminationProbe(\"syscall.kill\", args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());")
-                        && source.contains("logNativeTerminationProbe(\"syscall.tgkill\", args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0), currentStackPointer());")
-                        && source.contains("logNativeTerminationProbe(\"syscall.exit_group\", getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());"));
+                containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "syscall.kill")
+                        && source.contains("args[0], static_cast<int>(args[1]), 0, __builtin_return_address(0), currentStackPointer());")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "syscall.tgkill")
+                        && source.contains("args[1], static_cast<int>(args[2]), 0, __builtin_return_address(0), currentStackPointer());")
+                        && containsNativeStringAfterPrefix(source, "logNativeTerminationProbe(", "syscall.exit_group")
+                        && source.contains("getpid(), 0, static_cast<int>(args[0]), __builtin_return_address(0), currentStackPointer());"));
     }
 
     @Test
@@ -1628,14 +1653,14 @@ public class NativeFileHookSourceTest {
                         && source.contains("gInternalFileProbeDepth--")
                         && nativeCore.contains("native void enterNativeInternalFileProbe()")
                         && nativeCore.contains("native void leaveNativeInternalFileProbe()")
-                        && boxCore.contains("{\"enterNativeInternalFileProbe\",")
-                        && boxCore.contains("{\"leaveNativeInternalFileProbe\","));
+                        && containsJniNativeMethod(boxCore, "enterNativeInternalFileProbe")
+                        && containsJniNativeMethod(boxCore, "leaveNativeInternalFileProbe"));
         assertTrue("The Java proc-maps snapshot should have a native writer that reads real procfs under the same internal guard instead of depending on slow Java FileReader refreshes",
                 source.contains("extern \"C\" bool writeSanitizedProcMapsSnapshot(")
                         && source.contains("ScopedInternalFileProbe internal_probe")
                         && source.contains("writeProcMapsPathOnlyFile(fd)")
                         && nativeCore.contains("native boolean writeSanitizedProcMapsSnapshot")
-                        && boxCore.contains("{\"writeSanitizedProcMapsSnapshot\","));
+                        && containsJniNativeMethod(boxCore, "writeSanitizedProcMapsSnapshot"));
     }
 
     @Test
@@ -2137,12 +2162,13 @@ public class NativeFileHookSourceTest {
         assertTrue("NativeCore should keep the package-scoped native termination shield only as an explicit diagnostic",
                 nativeCore.contains("native void setNativeTerminationShieldPackage(String packageName)"));
         assertTrue("BoxCore should register the native sandbox environment JNI bridge",
-                boxCore.contains("{\"setNativeSandboxEnvironment\", \"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V\"")
+                containsJniNativeMethod(boxCore, "setNativeSandboxEnvironment")
+                        && containsNativeString(boxCore, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V")
                         && boxCore.contains("setNativeSandboxEnvironment(package_name, process_name, host_package)")
-                        && boxCore.contains("{\"setNativeSandboxEnvironmentPackage\",")
+                        && containsJniNativeMethod(boxCore, "setNativeSandboxEnvironmentPackage")
                         && boxCore.contains("setNativeSandboxEnvironmentPackage(package_name)"));
         assertTrue("BoxCore should keep the native termination shield JNI bridge for explicit diagnostics",
-                boxCore.contains("{\"setNativeTerminationShieldPackage\",")
+                containsJniNativeMethod(boxCore, "setNativeTerminationShieldPackage")
                         && boxCore.contains("setNativeTerminationShieldPackage(package_name)"));
 
         int enableRedirect = activityThread.indexOf("IOCore.get().enableRedirect(packageContext)");

@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeString;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetweenOrTail;
 
@@ -96,7 +97,8 @@ public class RawSyscallTerminationProbeSourceTest {
         assertTrue("anonymous diagnostics must still skip broad JIT/Pine executable maps",
                 source.contains("isExcludedVolatileExecutableMap")
                         && source.contains("strncmp(path, \"/memfd:\", 7)")
-                        && source.contains("strncmp(path, \"[anon:pine codes]\""));
+                        && source.contains("strncmp(path,")
+                        && containsNativeString(source, "[anon:pine codes]"));
     }
 
     @Test

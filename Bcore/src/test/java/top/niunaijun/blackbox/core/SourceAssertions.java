@@ -50,4 +50,28 @@ final class SourceAssertions {
         }
         return source.substring(start, end);
     }
+
+    static boolean containsNativeString(String source, String value) {
+        String quoted = quote(value);
+        return source.contains(quoted)
+                || source.contains("BB_CORE_STR(" + quoted + ")")
+                || source.contains("PINE_STR(" + quoted + ")")
+                || source.contains("BB_GUARD_STR(" + quoted + ")");
+    }
+
+    static boolean containsNativeStringAfterPrefix(String source, String prefix, String value) {
+        String quoted = quote(value);
+        return source.contains(prefix + quoted)
+                || source.contains(prefix + "BB_CORE_STR(" + quoted + ")")
+                || source.contains(prefix + "PINE_STR(" + quoted + ")")
+                || source.contains(prefix + "BB_GUARD_STR(" + quoted + ")");
+    }
+
+    static boolean containsJniNativeMethod(String source, String name) {
+        return containsNativeString(source, name);
+    }
+
+    private static String quote(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
 }

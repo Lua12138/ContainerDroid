@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeString;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 
 public class JniDiagnosticsHookSourceTest {
@@ -78,12 +79,14 @@ public class JniDiagnosticsHookSourceTest {
 
         assertTrue("JNI field diagnostics table replacement should be disabled unless explicitly requested",
                 source.contains("isFieldDiagnosticsEnabled()")
-                        && source.contains("native_property::getBoolJniDiagnostic(\"debug.blackbox.jni_field_diag\"")
+                        && source.contains("native_property::getBoolJniDiagnostic(")
+                        && containsNativeString(source, "debug.blackbox.jni_field_diag")
                         && source.contains("if (!isFieldDiagnosticsEnabled())")
                         && source.contains("JNI diagnostics disabled by debug property"));
         assertTrue("Reflection-heavy field metadata should be behind an explicit debug property",
                 source.contains("isDetailedFieldDiagnosticsEnabled()")
-                        && source.contains("native_property::getBoolJniDiagnostic(\"debug.blackbox.jni_field_details\""));
+                        && source.contains("native_property::getBoolJniDiagnostic(")
+                        && containsNativeString(source, "debug.blackbox.jni_field_details"));
         assertTrue("Default failed-lookup log should still be lightweight",
                 source.contains("const bool detailed = isDetailedFieldDiagnosticsEnabled();")
                         && source.contains("detailed ? describeClassLoader(env, clazz) : \"disabled\"")

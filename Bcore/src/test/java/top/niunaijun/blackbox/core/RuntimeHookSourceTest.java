@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static top.niunaijun.blackbox.core.SourceAssertions.containsNativeString;
 import static top.niunaijun.blackbox.core.SourceAssertions.readSource;
 import static top.niunaijun.blackbox.core.SourceAssertions.sliceBetween;
 
@@ -69,8 +70,8 @@ public class RuntimeHookSourceTest {
         assertTrue("Maps shim should drop host APK/dex mappings after package-name rewriting",
                 source.contains("contains(line, context.host_package)"));
         assertTrue("Maps shim should drop Pine native hook mappings",
-                source.contains("libpine.so")
-                        && source.contains("[anon:pine codes]"));
+                containsNativeString(source, "libpine.so")
+                        && containsNativeString(source, "[anon:pine codes]"));
         assertTrue("Maps shim should preserve app-private mappings long enough to rewrite them",
                 source.contains("shouldHideRawMapsLine(line, context)")
                         && source.contains("std::string sanitized = sanitizeMapsLine(line, context)")
@@ -119,8 +120,8 @@ public class RuntimeHookSourceTest {
                 "Bcore/src/main/cpp/Hook/RuntimeHook.cpp");
 
         assertTrue("Protected loaders commonly compare their private native path with the /data/data/<pkg> alias used by System.load",
-                source.contains("\"/data/data/%s\", context->package_name")
-                        || source.contains("\"/data/data/%s\", context.package_name"));
+                containsNativeString(source, "/data/data/%s")
+                        && (source.contains("context->package_name") || source.contains("context.package_name")));
         assertFalse("The protected proc maps view should not publish /data/user/0 for app-private native libraries when the loader was invoked through /data/data",
                 source.contains("\"/data/user/%s/%s\", context.user_id, context.package_name"));
     }

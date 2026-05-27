@@ -1,5 +1,6 @@
 #include "RawSyscallTerminationProbe.h"
 #include "IO.h"
+#include "Utils/XorString.h"
 
 #include <android/log.h>
 #include <atomic>
@@ -25,13 +26,17 @@ namespace blackbox {
 namespace rawsyscall {
 namespace {
 
-static const char *kTag = "BlackBoxRawSyscall";
+#define kTag BB_CORE_STR("BlackBoxRawSyscall")
 static constexpr size_t kMaxPatches = 8192;
 static constexpr size_t kMaxPath = 192;
 static constexpr uint32_t kHotPassthroughRestoreThreshold = 64 * 1024;
 
 #ifndef BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
 #define BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED 1
+#endif
+
+#if !BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
+#define __android_log_print(...) ((void) 0)
 #endif
 
 #if BLACKBOX_DIAGNOSTIC_LOGCAT_ENABLED
@@ -173,15 +178,15 @@ static const char *syscallName(int sysno) {
 #endif
 #ifdef __NR_kill
         case __NR_kill:
-            return "kill";
+            return BB_CORE_STR("kill");
 #endif
 #ifdef __NR_tkill
         case __NR_tkill:
-            return "tkill";
+            return BB_CORE_STR("tkill");
 #endif
 #ifdef __NR_tgkill
         case __NR_tgkill:
-            return "tgkill";
+            return BB_CORE_STR("tgkill");
 #endif
 #ifdef __NR_open
         case __NR_open:
@@ -189,7 +194,7 @@ static const char *syscallName(int sysno) {
 #endif
 #ifdef __NR_openat
         case __NR_openat:
-            return "openat";
+            return BB_CORE_STR("openat");
 #endif
 #ifdef __NR_read
         case __NR_read:
@@ -291,7 +296,7 @@ static int openVirtualProcFdForRawSyscall(int sysno, long args[6], uintptr_t cal
         copyTelemetryPath(telemetry->original, sizeof(telemetry->original), pathname);
         copyTelemetryPath(telemetry->redirected_path,
                           sizeof(telemetry->redirected_path),
-                          "virtual-proc-fd");
+                          BB_CORE_STR("virtual-proc-fd"));
     }
     return fd;
 }
@@ -713,9 +718,9 @@ static bool shouldScanPath(const char *path, bool include_file_backed_app_code) 
         || strstr(path, "/vendor/") != nullptr
         || strstr(path, "/product/") != nullptr
         || strstr(path, "/odm/") != nullptr
-        || strstr(path, "libblackbox.so") != nullptr
-        || strstr(path, "libpine.so") != nullptr
-        || strstr(path, "libblackhook.so") != nullptr
+        || strstr(path, BB_CORE_STR("libblackbox.so")) != nullptr
+        || strstr(path, BB_CORE_STR("libpine.so")) != nullptr
+        || strstr(path, BB_CORE_STR("libblackhook.so")) != nullptr
         || isHostPackagePath(path)) {
         return false;
     }
@@ -743,14 +748,14 @@ static bool isExcludedVolatileExecutableMap(const char *path) {
     if (strncmp(path, "/memfd:", 7) == 0) {
         return true;
     }
-    if (strncmp(path, "[anon:pine codes]", 17) == 0) {
+    if (strncmp(path, BB_CORE_STR("[anon:pine codes]"), 17) == 0) {
         return true;
     }
     if (strncmp(path, "[anon:", 6) == 0 && !isPatchableAnonymousExecutableMap(path)) {
         return true;
     }
-    return strstr(path, "jit-cache") != nullptr
-           || strstr(path, "dalvik-jit-code-cache") != nullptr;
+    return strstr(path, BB_CORE_STR("jit-cache")) != nullptr
+           || strstr(path, BB_CORE_STR("dalvik-jit-code-cache")) != nullptr;
 }
 
 static bool isVolatileExecutableMap(const char *path) {
@@ -867,10 +872,11 @@ static void scanAndPatchMap(uintptr_t start, uintptr_t end, uintptr_t map_offset
 }
 
 static void scanProcessMaps(bool include_file_backed_app_code) {
-    FILE *fp = fopen("/proc/self/maps", "re");
+    FILE *fp = fopen(BB_CORE_STR("/proc/self/maps"), BB_CORE_STR("re"));
     if (fp == nullptr) {
         __android_log_print(ANDROID_LOG_ERROR, kTag,
-                            "open /proc/self/maps failed: errno=%d (%s)", errno, strerror(errno));
+                            BB_CORE_STR("open /proc/self/maps failed: errno=%d (%s)"),
+                            errno, strerror(errno));
         return;
     }
 

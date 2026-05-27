@@ -14,6 +14,7 @@
 #include "art/jit.h"
 #include "trampoline/trampoline_installer.h"
 #include "utils/memory.h"
+#include "utils/xor_string.h"
 
 using namespace pine;
 
@@ -45,12 +46,12 @@ void Android::Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, 
     }
 
     {
-        ElfImg art_lib_handle("libart.so");
+        ElfImg art_lib_handle(PINE_STR("libart.so"));
         if (Android::version >= Android::kR) {
             suspend_all = reinterpret_cast<void (*)(void*, const char*, bool)>(art_lib_handle.GetSymbolAddress(
-                    "_ZN3art16ScopedSuspendAllC1EPKcb"));
+                    PINE_STR("_ZN3art16ScopedSuspendAllC1EPKcb")));
             resume_all = reinterpret_cast<void (*)(void*)>(art_lib_handle.GetSymbolAddress(
-                    "_ZN3art16ScopedSuspendAllD1Ev"));
+                    PINE_STR("_ZN3art16ScopedSuspendAllD1Ev")));
             if (UNLIKELY(!suspend_all || !resume_all)) {
                 LOGE("SuspendAll API is unavailable.");
                 suspend_all = nullptr;
@@ -58,9 +59,9 @@ void Android::Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, 
             } else {
                 start_gc_critical_section = reinterpret_cast<void (*)(void*, void*, art::GcCause,
                         art::CollectorType)>(art_lib_handle.GetSymbolAddress(
-                        "_ZN3art2gc23ScopedGCCriticalSectionC2EPNS_6ThreadENS0_7GcCauseENS0_13CollectorTypeE"));
+                        PINE_STR("_ZN3art2gc23ScopedGCCriticalSectionC2EPNS_6ThreadENS0_7GcCauseENS0_13CollectorTypeE")));
                 end_gc_critical_section = reinterpret_cast<void (*)(void*)>(art_lib_handle.GetSymbolAddress(
-                        "_ZN3art2gc23ScopedGCCriticalSectionD2Ev"));
+                        PINE_STR("_ZN3art2gc23ScopedGCCriticalSectionD2Ev")));
                 if (UNLIKELY(!start_gc_critical_section || !end_gc_critical_section)) {
                     LOGE("GC critical section API is unavailable.");
                     start_gc_critical_section = nullptr;
@@ -69,9 +70,9 @@ void Android::Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, 
             }
         } else {
             suspend_vm = reinterpret_cast<void (*)()>(art_lib_handle.GetSymbolAddress(
-                    "_ZN3art3Dbg9SuspendVMEv")); // art::Dbg::SuspendVM()
+                    PINE_STR("_ZN3art3Dbg9SuspendVMEv"))); // art::Dbg::SuspendVM()
             resume_vm = reinterpret_cast<void (*)()>(art_lib_handle.GetSymbolAddress(
-                    "_ZN3art3Dbg8ResumeVMEv")); // art::Dbg::ResumeVM()
+                    PINE_STR("_ZN3art3Dbg8ResumeVMEv"))); // art::Dbg::ResumeVM()
             if (UNLIKELY(!suspend_vm || !resume_vm)) {
                 LOGE("Suspend VM API is unavailable.");
                 suspend_vm = nullptr;
@@ -85,7 +86,7 @@ void Android::Init(JNIEnv* env, int sdk_version, bool disable_hiddenapi_policy, 
         art::Thread::Init(&art_lib_handle);
         art::ArtMethod::Init(&art_lib_handle);
         if (sdk_version >= kN) {
-            ElfImg jit_lib_handle("libart-compiler.so", false);
+            ElfImg jit_lib_handle(PINE_STR("libart-compiler.so"), false);
             art::Jit::Init(&art_lib_handle, &jit_lib_handle);
         }
 
@@ -111,26 +112,26 @@ void *target = handle->GetSymbolAddress(symbol); \
 if (LIKELY(target))  \
     trampoline_installer->NativeHookNoBackup(target, replace); \
 else  \
-    LOGE("DisableHiddenApiPolicy: symbol %s not found", symbol); \
+    LOGE(PINE_STR("DisableHiddenApiPolicy: symbol %s not found"), symbol); \
 } while(false)
 
     if (Android::version >= Android::kQ) {
         if (application) {
             // Android Q, for Domain::kApplication
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail28ShouldDenyAccessToMemberImplINS_8ArtFieldEEEbPT_NS0_7ApiListENS0_12AccessMethodE");
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail28ShouldDenyAccessToMemberImplINS_9ArtMethodEEEbPT_NS0_7ApiListENS0_12AccessMethodE");
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail28ShouldDenyAccessToMemberImplINS_8ArtFieldEEEbPT_NS0_7ApiListENS0_12AccessMethodE"));
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail28ShouldDenyAccessToMemberImplINS_9ArtMethodEEEbPT_NS0_7ApiListENS0_12AccessMethodE"));
         }
 
         if (platform) {
             // For Domain::kPlatform
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail30HandleCorePlatformApiViolationINS_8ArtFieldEEEbPT_RKNS0_13AccessContextENS0_12AccessMethodENS0_17EnforcementPolicyE");
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail30HandleCorePlatformApiViolationINS_9ArtMethodEEEbPT_RKNS0_13AccessContextENS0_12AccessMethodENS0_17EnforcementPolicyE");
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail30HandleCorePlatformApiViolationINS_8ArtFieldEEEbPT_RKNS0_13AccessContextENS0_12AccessMethodENS0_17EnforcementPolicyE"));
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail30HandleCorePlatformApiViolationINS_9ArtMethodEEEbPT_RKNS0_13AccessContextENS0_12AccessMethodENS0_17EnforcementPolicyE"));
         }
     } else {
         // Android P, all accesses from platform domain will be allowed
         if (application) {
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail19GetMemberActionImplINS_8ArtFieldEEENS0_6ActionEPT_NS_20HiddenApiAccessFlags7ApiListES4_NS0_12AccessMethodE");
-            HOOK_SYMBOL("_ZN3art9hiddenapi6detail19GetMemberActionImplINS_9ArtMethodEEENS0_6ActionEPT_NS_20HiddenApiAccessFlags7ApiListES4_NS0_12AccessMethodE");
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail19GetMemberActionImplINS_8ArtFieldEEENS0_6ActionEPT_NS_20HiddenApiAccessFlags7ApiListES4_NS0_12AccessMethodE"));
+            HOOK_SYMBOL(PINE_STR("_ZN3art9hiddenapi6detail19GetMemberActionImplINS_9ArtMethodEEENS0_6ActionEPT_NS_20HiddenApiAccessFlags7ApiListES4_NS0_12AccessMethodE"));
         }
     }
 
@@ -151,7 +152,7 @@ static bool isReadableProcessAddress(const void* address) {
         return false;
     }
 
-    FILE* maps = fopen("/proc/self/maps", "r");
+    FILE* maps = fopen(PINE_STR("/proc/self/maps"), PINE_STR("r"));
     if (maps == nullptr) {
         return false;
     }
@@ -179,16 +180,17 @@ bool Android::DisableProfileSaver() {
     // we may find these symbols during initialization in the future to reduce time consumption.
     void* process_profiling_info;
     {
-        ElfImg handle("libart.so");
+        ElfImg handle(PINE_STR("libart.so"));
 
         // MIUI added, size of the original function is smaller than size of a direct jump trampoline
         // and cannot be hooked, else we will write overflow and corrupt the next function
         // https://github.com/canyie/pine/issues/18
-        process_profiling_info = handle.GetSymbolAddress("_ZN3art12ProfileSaver20ProcessProfilingInfoEbPtb", false);
+        process_profiling_info = handle.GetSymbolAddress(
+                PINE_STR("_ZN3art12ProfileSaver20ProcessProfilingInfoEbPtb"), false);
         if (LIKELY(!process_profiling_info)) {
-            const char* symbol = version < kO ? "_ZN3art12ProfileSaver20ProcessProfilingInfoEPt"
-                                              : version < kS ? "_ZN3art12ProfileSaver20ProcessProfilingInfoEbPt"
-                                              : "_ZN3art12ProfileSaver20ProcessProfilingInfoEbbPt";
+            const char* symbol = version < kO ? PINE_STR("_ZN3art12ProfileSaver20ProcessProfilingInfoEPt")
+                                              : version < kS ? PINE_STR("_ZN3art12ProfileSaver20ProcessProfilingInfoEbPt")
+                                              : PINE_STR("_ZN3art12ProfileSaver20ProcessProfilingInfoEbbPt");
             process_profiling_info = handle.GetSymbolAddress(symbol);
         }
     }
@@ -215,7 +217,8 @@ void Android::InitMembersFromRuntime(JavaVM* jvm, const ElfImg* handle) {
         }
         return;
     }
-    void** instance_ptr = static_cast<void**>(handle->GetSymbolAddress("_ZN3art7Runtime9instance_E"));
+    void** instance_ptr = static_cast<void**>(handle->GetSymbolAddress(
+            PINE_STR("_ZN3art7Runtime9instance_E")));
     void* runtime;
     if (UNLIKELY(!instance_ptr || !(runtime = *instance_ptr))) {
         LOGE("Unable to retrieve Runtime.");
@@ -227,7 +230,7 @@ void Android::InitMembersFromRuntime(JavaVM* jvm, const ElfImg* handle) {
     // https://android.googlesource.com/platform/art/+/4dcac3629ea5925e47b522073f3c49420e998911
     // https://github.com/crdroidandroid/android_art/commit/aa7999027fa830d0419c9518ab56ceb7fcf6f7f1
     bool has_smaller_irt = handle->GetSymbolAddress(
-            "_ZN3art17SmallIrtAllocator10DeallocateEPNS_8IrtEntryE", false) != nullptr;
+            PINE_STR("_ZN3art17SmallIrtAllocator10DeallocateEPNS_8IrtEntryE"), false) != nullptr;
 
     size_t jvm_offset = OffsetOfJavaVm(has_smaller_irt);
     auto val = jvm_offset
@@ -256,7 +259,7 @@ void Android::InitClassLinker(void* runtime, size_t java_vm_offset, const ElfImg
     if (version < kQ) return;
     bool required = version > kQ;
     make_visibly_initialized_ = reinterpret_cast<void (*)(void*, void*, bool)>(handle->GetSymbolAddress(
-            "_ZN3art11ClassLinker40MakeInitializedClassesVisiblyInitializedEPNS_6ThreadEb", required));
+            PINE_STR("_ZN3art11ClassLinker40MakeInitializedClassesVisiblyInitializedEPNS_6ThreadEb"), required));
     if (!make_visibly_initialized_) {
         if (UNLIKELY(required)) LOGE("ClassLinker::MakeInitializedClassesVisiblyInitialized not found");
         return;
@@ -276,7 +279,7 @@ void Android::InitJitCodeCache(void *runtime, size_t java_vm_offset, const ElfIm
     jit_code_cache_validated_ = false;
     move_jit_info_validation_skip_logged_ = false;
     move_obsolete_method_ = reinterpret_cast<void (*)(void*, void*, void*)>(handle->GetSymbolAddress(
-            "_ZN3art3jit12JitCodeCache18MoveObsoleteMethodEPNS_9ArtMethodES3_"));
+            PINE_STR("_ZN3art3jit12JitCodeCache18MoveObsoleteMethodEPNS_9ArtMethodES3_")));
     if (UNLIKELY(!move_obsolete_method_)) {
         LOGW("JitCodeCache::MoveObsoleteMethod not found. Fallback to clearing jit info.");
         return;
@@ -290,7 +293,7 @@ void Android::InitJitCodeCache(void *runtime, size_t java_vm_offset, const ElfIm
         //   jit::JitCodeCache* jit_code_cache_;
         // }
         void*** symbol = reinterpret_cast<void***>(handle->GetSymbolAddress(
-                "_ZN3art12ProfileSaver9instance_E"));
+                PINE_STR("_ZN3art12ProfileSaver9instance_E")));
         if (UNLIKELY(symbol == nullptr)) {
             LOGW("ProfileSaver::instance_ not found. Fallback to clearing jit info.");
             return;
